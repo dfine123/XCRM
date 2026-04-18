@@ -1,0 +1,16 @@
+node_modules
+.next
+.turbo
+dist
+coverage
+.env
+.env.local
+.env.*.local
+*.log
+.DS_Store
+.vscode/*
+!.vscode/settings.example.json
+.idea
+next-env.d.ts
+*.tsbuildinfo
+.pnpm-store

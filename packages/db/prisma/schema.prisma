@@ -1,0 +1,821 @@
+// XCRM — Prisma schema
+// Source of truth. If a question can be answered by this file, it's answered here.
+// Every entity: createdAt, updatedAt, deletedAt (soft delete, spec §0.3).
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// =============================================================================
+// §1.1 Identity & access — ops app
+// =============================================================================
+
+enum UserRole {
+  FOUNDER
+  PARTNER
+  VA_T1
+  VA_T2
+  VA_T3
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  OFFBOARDED
+}
+
+model User {
+  id             String     @id @default(cuid())
+  email          String     @unique
+  name           String
+  role           UserRole
+  timezone       String     @default("UTC")
+  status         UserStatus @default(ACTIVE)
+  accuracyScore  Float      @default(1.0)
+  passwordHash   String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  sessions                Session[]
+  assignedBatches         TaskBatch[]
+  createdPosts            Post[]                @relation("PostCreatedBy")
+  approvedPosts           Post[]                @relation("PostApprovedBy")
+  postedPosts             Post[]                @relation("PostPostedBy")
+  postedReplies           Reply[]               @relation("ReplyPostedBy")
+  postedReposts           Repost[]              @relation("RepostPostedBy")
+  statusTransitions       StatusTransition[]
+  approvedCamps           Camp[]                @relation("CampApprovedBy")
+  authoredContextNotes    ContextNote[]
+  createdFormulas         ContentFormula[]
+  qualityReviews          QualitySample[]
+
+  @@index([role, status])
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+// =============================================================================
+// §1.1 Identity & access — portal app
+// =============================================================================
+
+enum AgencyUserRole {
+  AGENCY_OWNER
+  AGENCY_STAFF
+}
+
+model AgencyUser {
+  id       String         @id @default(cuid())
+  email    String         @unique
+  name     String
+  agencyId String
+  role     AgencyUserRole
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  agency          Agency                 @relation(fields: [agencyId], references: [id], onDelete: Restrict)
+  magicLinks      AgencyMagicLink[]
+  sessions        AgencySession[]
+  uploadedAssets  ContentAsset[]
+
+  @@index([agencyId])
+}
+
+model AgencyMagicLink {
+  id           String   @id @default(cuid())
+  agencyUserId String
+  tokenHash    String   @unique
+  expiresAt    DateTime
+  usedAt       DateTime?
+  createdAt    DateTime @default(now())
+
+  agencyUser AgencyUser @relation(fields: [agencyUserId], references: [id], onDelete: Cascade)
+
+  @@index([agencyUserId])
+}
+
+model AgencySession {
+  id           String   @id @default(cuid())
+  agencyUserId String
+  token        String   @unique
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+
+  agencyUser AgencyUser @relation(fields: [agencyUserId], references: [id], onDelete: Cascade)
+
+  @@index([agencyUserId])
+}
+
+// =============================================================================
+// §1.2 Agency & contract
+// =============================================================================
+
+enum AgencyStatus {
+  PROSPECT
+  ACTIVE
+  PAUSED
+  CHURNED
+}
+
+model Agency {
+  id                   String       @id @default(cuid())
+  name                 String
+  slug                 String       @unique
+  status               AgencyStatus @default(PROSPECT)
+  retentionRiskScore   Float        @default(0)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  contracts    Contract[]
+  models       Model[]
+  agencyUsers  AgencyUser[]
+
+  @@index([status])
+}
+
+enum ContractTier {
+  FLAT
+  FLAT_PLUS_PERF
+  CAMP_SLOT
+}
+
+model Contract {
+  id           String       @id @default(cuid())
+  agencyId     String
+  tier         ContractTier
+  accountSlots Int
+  monthlyRate  Decimal      @db.Decimal(10, 2)
+  startDate    DateTime
+  endDate      DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  agency Agency @relation(fields: [agencyId], references: [id], onDelete: Restrict)
+
+  @@index([agencyId])
+  @@index([startDate, endDate])
+}
+
+enum Archetype {
+  BLONDE_THIRST
+  ALT_GOTH
+  GYM_GIRL
+  LATINA
+  ASIAN
+  REDHEAD
+  MILF
+  TEEN_LOOK
+  EBONY
+  OTHER
+}
+
+model Model {
+  id              String    @id @default(cuid())
+  agencyId        String
+  displayName     String
+  realName        String
+  archetype       Archetype
+  voiceToneNotes  String    @db.Text
+  hardRules       Json      @default("[]")
+  softPreferences Json      @default("[]")
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  agency        Agency         @relation(fields: [agencyId], references: [id], onDelete: Restrict)
+  accounts      Account[]
+  contentAssets ContentAsset[]
+
+  @@index([agencyId])
+  @@index([archetype])
+}
+
+// =============================================================================
+// §1.3 Accounts (X handles)
+// =============================================================================
+
+enum AccountStatus {
+  PROSPECT
+  FRESH_BUILD
+  ACQUIRED_AGED
+  ACQUIRED_IN_NICHE
+  TAKEOVER
+  ACTIVE_RAMPING
+  ACTIVE_ESTABLISHED
+  ACTIVE_MATURE
+  PAUSED
+  OFFBOARDING
+  ARCHIVED
+  QUARANTINED
+}
+
+model Account {
+  id                String        @id @default(cuid())
+  modelId           String
+  handle            String        @unique
+  platformAccountId String?       @unique
+  status            AccountStatus @default(PROSPECT)
+  statusChangedAt   DateTime      @default(now())
+  followerCount     Int           @default(0)
+  phoneDeviceId     String?
+  peakHours         Int[]         @default([])
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  model             Model                     @relation(fields: [modelId], references: [id], onDelete: Restrict)
+  phoneDevice       PhoneDevice?              @relation(fields: [phoneDeviceId], references: [id], onDelete: SetNull)
+  posts             Post[]
+  replies           Reply[]
+  sourceReposts     Repost[]                  @relation("RepostSourceAccount")
+  reposterReposts   Repost[]                  @relation("RepostReposterAccount")
+  followerSnapshots AccountFollowerSnapshot[]
+  assetUsages       AssetUsage[]
+  statusTransitions StatusTransition[]
+  campMemberships   CampMembership[]
+  tasks             Task[]
+  pairingHistoryA   CampPairingHistory[]      @relation("PairingA")
+  pairingHistoryB   CampPairingHistory[]      @relation("PairingB")
+
+  @@index([modelId])
+  @@index([status])
+  @@index([phoneDeviceId])
+}
+
+enum PhoneDeviceStatus {
+  ACTIVE
+  OFFLINE
+  MAINTENANCE
+}
+
+model PhoneDevice {
+  id     String            @id @default(cuid())
+  label  String            @unique
+  status PhoneDeviceStatus @default(ACTIVE)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  accounts Account[]
+  tasks    Task[]
+}
+
+model AccountFollowerSnapshot {
+  id             String   @id @default(cuid())
+  accountId      String
+  followerCount  Int
+  followingCount Int
+  takenAt        DateTime @default(now())
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId, takenAt(sort: Desc)])
+}
+
+model StatusTransition {
+  id         String        @id @default(cuid())
+  accountId  String
+  fromStatus AccountStatus
+  toStatus   AccountStatus
+  actorId    String
+  reason     String
+  occurredAt DateTime      @default(now())
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  actor   User    @relation(fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@index([accountId, occurredAt(sort: Desc)])
+}
+
+// =============================================================================
+// §1.4 Content assets
+// =============================================================================
+
+enum AssetType {
+  PHOTO
+  VIDEO
+  GIF
+}
+
+enum AssetTagStatus {
+  PENDING
+  TAGGED
+  FAILED
+}
+
+model ContentAsset {
+  id                     String         @id @default(cuid())
+  modelId                String
+  type                   AssetType
+  storageUrl             String
+  thumbnailUrl           String?
+  uploadedByAgencyUserId String?
+  uploadedAt             DateTime       @default(now())
+  autoTags               Json           @default("{}")
+  manualTags             String[]       @default([])
+  exclusiveToAccountIds  String[]       @default([])
+  tagStatus              AssetTagStatus @default(PENDING)
+  lastUsedAt             DateTime?
+  useCount               Int            @default(0)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  model             Model        @relation(fields: [modelId], references: [id], onDelete: Restrict)
+  uploadedByAgency  AgencyUser?  @relation(fields: [uploadedByAgencyUserId], references: [id], onDelete: SetNull)
+  usages            AssetUsage[]
+
+  @@index([modelId])
+  @@index([tagStatus])
+}
+
+model AssetUsage {
+  id        String   @id @default(cuid())
+  assetId   String
+  accountId String
+  postId    String?
+  usedAt    DateTime @default(now())
+
+  asset   ContentAsset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  account Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  post    Post?        @relation(fields: [postId], references: [id], onDelete: SetNull)
+
+  @@index([assetId, usedAt(sort: Desc)])
+  @@index([accountId, usedAt(sort: Desc)])
+}
+
+// =============================================================================
+// §1.5 Content formula
+// =============================================================================
+
+enum FormulaStatus {
+  DRAFT
+  ACTIVE
+  RETIRED
+}
+
+model ContentFormula {
+  id                  String        @id @default(cuid())
+  version             Int           @unique @default(autoincrement())
+  status              FormulaStatus @default(DRAFT)
+  appliesTo           Json
+  hookPatterns        Json          @default("[]")
+  baitArchetypes      Json          @default("[]")
+  assetPairingRules   Json          @default("[]")
+  hashtagStrategy     Json          @default("{}")
+  lengthTargets       Json          @default("{}")
+  timeOfDayWeights    Json          @default("{}")
+  rawPlaybook         String        @db.Text
+  createdByUserId     String
+  activatedAt         DateTime?
+  retiredAt           DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  createdBy User @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  @@index([status])
+}
+
+// =============================================================================
+// §1.6 Posts, replies, reposts
+// =============================================================================
+
+enum PostStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  SCHEDULED
+  POSTED
+  FAILED
+  CANCELLED
+}
+
+model Post {
+  id                String     @id @default(cuid())
+  accountId         String
+  status            PostStatus @default(DRAFT)
+  copy              String     @db.Text
+  assetIds          String[]   @default([])
+  scheduledFor      DateTime?
+  postedAt          DateTime?
+  platformPostId    String?    @unique
+  generatedByUserId String?
+  generationMeta    Json       @default("{}")
+  approvedByUserId  String?
+  postedByUserId    String?
+  confidenceScore   Float?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  account     Account          @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  generatedBy User?            @relation("PostCreatedBy", fields: [generatedByUserId], references: [id], onDelete: SetNull)
+  approvedBy  User?            @relation("PostApprovedBy", fields: [approvedByUserId], references: [id], onDelete: SetNull)
+  postedBy    User?            @relation("PostPostedBy", fields: [postedByUserId], references: [id], onDelete: SetNull)
+  reposts     Repost[]
+  usages      AssetUsage[]
+  engagements PostEngagement[]
+
+  @@index([accountId, status])
+  @@index([scheduledFor])
+  @@index([status])
+}
+
+enum ReplyStatus {
+  DRAFT
+  APPROVED
+  SCHEDULED
+  POSTED
+  FAILED
+  CANCELLED
+}
+
+model Reply {
+  id                    String      @id @default(cuid())
+  accountId             String
+  targetPostId          String
+  targetPostAuthorHandle String
+  targetPostContent     String      @db.Text
+  copy                  String      @db.Text
+  status                ReplyStatus @default(DRAFT)
+  scheduledFor          DateTime?
+  postedAt              DateTime?
+  generationMeta        Json        @default("{}")
+  postedByUserId        String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  account     Account           @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  postedBy    User?             @relation("ReplyPostedBy", fields: [postedByUserId], references: [id], onDelete: SetNull)
+  engagements ReplyEngagement[]
+
+  @@index([accountId, status])
+  @@index([scheduledFor])
+}
+
+enum RepostStatus {
+  SCHEDULED
+  POSTED
+  SKIPPED
+  FAILED
+}
+
+model Repost {
+  id                 String       @id @default(cuid())
+  sourceAccountId    String
+  sourcePostId       String
+  reposterAccountId  String
+  campId             String
+  scheduledFor       DateTime
+  postedAt           DateTime?
+  status             RepostStatus @default(SCHEDULED)
+  postedByUserId     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sourceAccount   Account            @relation("RepostSourceAccount", fields: [sourceAccountId], references: [id], onDelete: Restrict)
+  sourcePost      Post               @relation(fields: [sourcePostId], references: [id], onDelete: Restrict)
+  reposterAccount Account            @relation("RepostReposterAccount", fields: [reposterAccountId], references: [id], onDelete: Restrict)
+  camp            Camp               @relation(fields: [campId], references: [id], onDelete: Restrict)
+  postedBy        User?              @relation("RepostPostedBy", fields: [postedByUserId], references: [id], onDelete: SetNull)
+  engagements     RepostEngagement[]
+
+  @@index([reposterAccountId, status])
+  @@index([campId])
+  @@index([scheduledFor])
+}
+
+// Engagement split per-entity, per ADR note in spec §1.6.
+
+model PostEngagement {
+  id             String   @id @default(cuid())
+  postId         String
+  likes          Int      @default(0)
+  reposts        Int      @default(0)
+  replies        Int      @default(0)
+  bookmarks      Int      @default(0)
+  impressions    Int      @default(0)
+  profileClicks  Int      @default(0)
+  capturedAt     DateTime @default(now())
+
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@index([postId, capturedAt(sort: Desc)])
+}
+
+model ReplyEngagement {
+  id             String   @id @default(cuid())
+  replyId        String
+  likes          Int      @default(0)
+  reposts        Int      @default(0)
+  replies        Int      @default(0)
+  bookmarks      Int      @default(0)
+  impressions    Int      @default(0)
+  profileClicks  Int      @default(0)
+  capturedAt     DateTime @default(now())
+
+  reply Reply @relation(fields: [replyId], references: [id], onDelete: Cascade)
+
+  @@index([replyId, capturedAt(sort: Desc)])
+}
+
+model RepostEngagement {
+  id             String   @id @default(cuid())
+  repostId       String
+  likes          Int      @default(0)
+  reposts        Int      @default(0)
+  replies        Int      @default(0)
+  bookmarks      Int      @default(0)
+  impressions    Int      @default(0)
+  profileClicks  Int      @default(0)
+  capturedAt     DateTime @default(now())
+
+  repost Repost @relation(fields: [repostId], references: [id], onDelete: Cascade)
+
+  @@index([repostId, capturedAt(sort: Desc)])
+}
+
+// =============================================================================
+// §1.7 Camps
+// =============================================================================
+
+enum CampStatus {
+  PROPOSED
+  ACTIVE
+  COMPLETED
+}
+
+model Camp {
+  id                   String     @id @default(cuid())
+  weekOf               DateTime   @db.Date
+  status               CampStatus @default(PROPOSED)
+  createdByAlgorithm   Boolean    @default(true)
+  approvedByUserId     String?
+  approvedAt           DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  approvedBy  User?            @relation("CampApprovedBy", fields: [approvedByUserId], references: [id], onDelete: SetNull)
+  memberships CampMembership[]
+  reposts     Repost[]
+
+  @@index([weekOf, status])
+}
+
+model CampMembership {
+  id        String @id @default(cuid())
+  campId    String
+  accountId String
+
+  createdAt DateTime @default(now())
+
+  camp    Camp    @relation(fields: [campId], references: [id], onDelete: Cascade)
+  account Account @relation(fields: [accountId], references: [id], onDelete: Restrict)
+
+  @@unique([campId, accountId])
+  @@index([accountId])
+}
+
+model CampPairingHistory {
+  id          String   @id @default(cuid())
+  accountAId  String
+  accountBId  String
+  weekOf      DateTime @db.Date
+
+  createdAt DateTime @default(now())
+
+  accountA Account @relation("PairingA", fields: [accountAId], references: [id], onDelete: Cascade)
+  accountB Account @relation("PairingB", fields: [accountBId], references: [id], onDelete: Cascade)
+
+  @@unique([accountAId, accountBId, weekOf])
+  @@index([weekOf])
+  @@index([accountAId])
+  @@index([accountBId])
+}
+
+// =============================================================================
+// §1.8 Context, insights, notes
+// =============================================================================
+
+enum ContextNoteStatus {
+  ACTIVE
+  EXPIRED
+  CANCELLED
+}
+
+model ContextNote {
+  id              String            @id @default(cuid())
+  authorUserId    String
+  title           String
+  body            String            @db.Text
+  effectiveFrom   DateTime
+  effectiveUntil  DateTime?
+  weight          Int               @default(5)
+  scope           Json              @default("{\"all\": true}")
+  status          ContextNoteStatus @default(ACTIVE)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  author User @relation(fields: [authorUserId], references: [id], onDelete: Restrict)
+
+  @@index([status, effectiveFrom, effectiveUntil])
+}
+
+enum InsightKind {
+  FORMAT_PERFORMANCE
+  ASSET_TYPE
+  TIME_SLOT
+  ARCHETYPE_CORRELATION
+  OTHER
+}
+
+enum InsightStatus {
+  ACTIVE
+  PROMOTED
+  DEMOTED
+  STALE
+}
+
+model InsightRule {
+  id                    String        @id @default(cuid())
+  kind                  InsightKind
+  title                 String
+  description           String        @db.Text
+  confidence            Float
+  impactEstimate        Float
+  computedFromDateStart DateTime
+  computedFromDateEnd   DateTime
+  status                InsightStatus @default(ACTIVE)
+  promotedToFormula     Boolean       @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status, kind])
+}
+
+// =============================================================================
+// §1.9 VA task system
+// =============================================================================
+
+enum TaskBatchKind {
+  WARMUP
+  REPLY
+  POST_DROP
+  REPOST
+  COMMENT_TRIAGE
+  MIXED
+}
+
+enum TaskBatchStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  EXPIRED
+}
+
+model TaskBatch {
+  id               String           @id @default(cuid())
+  assignedToUserId String
+  kind             TaskBatchKind
+  scheduledFor     DateTime
+  status           TaskBatchStatus  @default(PENDING)
+  startedAt        DateTime?
+  completedAt      DateTime?
+  totalTasks       Int              @default(0)
+  completedTasks   Int              @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  assignedTo User   @relation(fields: [assignedToUserId], references: [id], onDelete: Restrict)
+  tasks      Task[]
+
+  @@index([assignedToUserId, status])
+  @@index([scheduledFor])
+}
+
+enum TaskAction {
+  WARMUP_POST
+  POST
+  REPLY
+  REPOST
+  COMMENT_RESPONSE
+}
+
+enum TaskStatus {
+  PENDING
+  COMPLETED
+  SKIPPED
+  ESCALATED
+  FAILED
+}
+
+model Task {
+  id                String     @id @default(cuid())
+  batchId           String
+  orderInBatch      Int
+  accountId         String
+  phoneDeviceId     String?
+  action            TaskAction
+  payload           Json
+  status            TaskStatus @default(PENDING)
+  startedAt         DateTime?
+  completedAt       DateTime?
+  timeSpentSeconds  Int?
+  escalationReason  String?
+  createdRecordId   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  batch         TaskBatch        @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  account       Account          @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  phoneDevice   PhoneDevice?     @relation(fields: [phoneDeviceId], references: [id], onDelete: SetNull)
+  qualitySamples QualitySample[]
+
+  @@index([batchId, orderInBatch])
+  @@index([accountId, status])
+}
+
+enum QualityVerdict {
+  PASS
+  MINOR_DEVIATION
+  MAJOR_DEVIATION
+}
+
+model QualitySample {
+  id               String          @id @default(cuid())
+  taskId           String
+  sampledAt        DateTime        @default(now())
+  reviewedByUserId String?
+  reviewedAt       DateTime?
+  verdict          QualityVerdict?
+  notes            String?         @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  task       Task  @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  reviewedBy User? @relation(fields: [reviewedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([taskId])
+  @@index([verdict])
+}
+
+// =============================================================================
+// §4 Background job runs
+// =============================================================================
+
+enum JobRunStatus {
+  RUNNING
+  SUCCEEDED
+  FAILED
+}
+
+model JobRun {
+  id         String       @id @default(cuid())
+  jobName    String
+  status     JobRunStatus @default(RUNNING)
+  startedAt  DateTime     @default(now())
+  finishedAt DateTime?
+  durationMs Int?
+  error      String?      @db.Text
+  metadata   Json         @default("{}")
+
+  @@index([jobName, startedAt(sort: Desc)])
+  @@index([status])
+}
