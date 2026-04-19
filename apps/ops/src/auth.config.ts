@@ -6,6 +6,10 @@ import type { UserRole } from '@xcrm/db';
  * Providers that touch the DB are attached in `./auth.ts` — Node runtime only.
  */
 export const authConfig = {
+  // Railway (and any reverse proxy) rewrites the Host header; without
+  // trustHost, Auth.js v5 throws UntrustedHost on every /api/auth/* hit.
+  // Safe here: the host header is set by Railway's edge, not arbitrary clients.
+  trustHost: true,
   session: { strategy: 'jwt', maxAge: 60 * 60 * 8 },
   pages: { signIn: '/login' },
   providers: [],
