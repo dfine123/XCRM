@@ -1,0 +1,40 @@
+# Keep the build context small and prevent clobbering the installed
+# node_modules from the deps layer. Mirrors .gitignore but stricter
+# about things that exist locally but must not ship.
+
+# Dependencies and caches
+**/node_modules
+**/.pnpm-store
+**/.turbo
+
+# Build outputs
+**/.next
+**/dist
+**/coverage
+**/*.tsbuildinfo
+
+# Local env — secrets must come from Railway, not baked into images
+**/.env
+**/.env.local
+**/.env.*.local
+
+# Editor / OS noise
+.vscode
+.idea
+.DS_Store
+
+# Version control metadata
+.git
+.github
+
+# Docs + infra-only files don't need to land in the image
+docs
+infra
+*.md
+!apps/ops/**/*.md
+
+# Logs
+**/*.log
+
+# CI artifacts
+coverage
