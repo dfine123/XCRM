@@ -5,7 +5,19 @@
     "node": "20.19.0",
     "pnpm": "9.12.0"
   },
-  "install": {
-    "command": "pnpm install --frozen-lockfile"
+  "steps": {
+    "install": {
+      "commands": [
+        "corepack enable",
+        "corepack prepare pnpm@9.12.0 --activate",
+        "pnpm install --frozen-lockfile"
+      ]
+    }
+  },
+  "caches": {
+    "pnpm-store": {
+      "directory": "/root/.local/share/pnpm/store",
+      "type": "shared"
+    }
   }
 }
