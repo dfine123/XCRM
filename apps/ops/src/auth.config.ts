@@ -1,4 +1,5 @@
 import type { NextAuthConfig } from 'next-auth';
+import type { UserRole } from '@xcrm/db';
 
 /**
  * Edge-safe Auth.js config. Imported by middleware (which runs on Edge).
@@ -12,7 +13,7 @@ export const authConfig = {
     jwt: ({ token, user }) => {
       if (user) {
         token.uid = (user as { id: string }).id;
-        token.role = (user as { role: string }).role;
+        token.role = (user as { role: UserRole }).role;
       }
       return token;
     },
@@ -20,8 +21,8 @@ export const authConfig = {
       if (typeof token.uid === 'string') {
         (session.user as { id: string }).id = token.uid;
       }
-      if (typeof token.role === 'string') {
-        (session.user as { role: string }).role = token.role;
+      if (token.role) {
+        (session.user as { role: UserRole }).role = token.role;
       }
       return session;
     },

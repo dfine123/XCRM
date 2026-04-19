@@ -1,5 +1,6 @@
-import NextAuth, { type DefaultSession } from 'next-auth';
+import NextAuth, { type DefaultSession, type NextAuthResult } from 'next-auth';
 import Credentials from 'next-auth/providers/credentials';
+import type {} from 'next-auth/jwt';
 import { prisma, UserRole, UserStatus } from '@xcrm/db';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
@@ -29,7 +30,7 @@ const credentialsSchema = z.object({
   password: z.string().min(8),
 });
 
-export const { handlers, auth, signIn, signOut } = NextAuth({
+const nextAuth: NextAuthResult = NextAuth({
   ...authConfig,
   providers: [
     Credentials({
@@ -50,3 +51,5 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     }),
   ],
 });
+
+export const { handlers, auth, signIn, signOut } = nextAuth;
