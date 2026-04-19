@@ -12,7 +12,9 @@
     "postinstall": "prisma generate",
     "generate": "prisma generate",
     "migrate": "prisma migrate deploy",
+    "migrate:deploy": "prisma migrate deploy",
     "migrate:dev": "prisma migrate dev",
+    "db:seed": "tsx prisma/seed.ts",
     "studio": "prisma studio",
     "lint": "eslint src --ext .ts",
     "typecheck": "tsc --noEmit",
@@ -20,10 +22,13 @@
     "clean": "rm -rf dist .turbo generated"
   },
   "dependencies": {
-    "@prisma/client": "5.18.0"
+    "@prisma/client": "5.18.0",
+    "bcryptjs": "2.4.3"
   },
   "devDependencies": {
+    "@types/bcryptjs": "2.4.6",
     "prisma": "5.18.0",
+    "tsx": "4.19.0",
     "typescript": "5.5.4"
   }
 }

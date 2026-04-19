@@ -74,5 +74,10 @@ COPY --from=builder /app ./
 
 EXPOSE 3000
 
-# pnpm --filter handles workspace resolution; no cd needed.
-CMD ["pnpm", "--filter", "@xcrm/ops", "start"]
+# Boot sequence: apply any pending migrations, upsert seed rows,
+# then start Next. All three steps are idempotent:
+#   - `prisma migrate deploy` is a no-op when fully migrated
+#   - seed.ts uses upserts
+#   - next start is stateless
+# Shell form so && chains through the same sh -c.
+CMD ["sh", "-c", "pnpm --filter @xcrm/db migrate:deploy && pnpm --filter @xcrm/db db:seed && pnpm --filter @xcrm/ops start"]
