@@ -1,10 +1,14 @@
-# syntax=docker/dockerfile:1.7
 #
 # Ops service (apps/ops) — multi-stage pnpm monorepo build.
 # Build context: repo ROOT. Configure Railway Settings > Dockerfile Path
 # to "apps/ops/Dockerfile".
 #
-# Layers are ordered so that changes under apps/ops/src don't bust the
+# Plain Dockerfile syntax — no BuildKit-specific features (no
+# --mount=type=cache / secret / bind). Railway's builder doesn't
+# support those cache mounts; repeat builds re-download the pnpm
+# store, which is acceptable.
+#
+# Layers are still ordered so that edits under src/ don't bust the
 # install cache — only changes to any package.json or pnpm-lock.yaml do.
 
 # -----------------------------------------------------------------------------
@@ -43,8 +47,7 @@ COPY packages/jobs/package.json  ./packages/jobs/
 
 # --ignore-scripts: the db package has a postinstall that runs `prisma generate`,
 # but the schema file isn't copied yet. We run generate explicitly after source lands.
-RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
-    pnpm install --frozen-lockfile --ignore-scripts
+RUN pnpm install --frozen-lockfile --ignore-scripts
 
 # Now the source. .dockerignore at repo root must exclude node_modules,
 # .next, .turbo, and .env* so we don't clobber the installed modules.
