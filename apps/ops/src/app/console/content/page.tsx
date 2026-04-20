@@ -1,10 +1,21 @@
+import { EmptyState, OPS_HUES, PageHeader } from '@xcrm/ui';
+
 export default function ContentPage() {
   return (
-    <div className="flex flex-col gap-4">
-      <h1 className="text-2xl font-semibold">Content</h1>
-      <p className="text-sm text-muted-foreground">
-        Asset library + per-model runway. Upload lives in the agency portal.
-      </p>
-    </div>
+    <>
+      <PageHeader
+        kicker="CONTENT"
+        title="Content"
+        subtitle="Asset library and per-model runway. Upload lives in the agency portal."
+        hue={OPS_HUES.content}
+        icon="Co"
+      />
+      <EmptyState
+        hue={OPS_HUES.content}
+        icon="Co"
+        title="Library is empty"
+        description="Assets appear here as partners upload them from the portal."
+      />
+    </>
   );
 }

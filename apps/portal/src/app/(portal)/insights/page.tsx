@@ -1,10 +1,21 @@
+import { EmptyState, PageHeader, PORTAL_HUES } from '@xcrm/ui';
+
 export default function PortalInsights() {
   return (
-    <div className="flex flex-col gap-4">
-      <h1 className="text-2xl font-semibold">Insights</h1>
-      <p className="text-sm text-muted-foreground">
-        Screenshot-ready plain-language cards you can forward to your model (§3.3.4).
-      </p>
-    </div>
+    <>
+      <PageHeader
+        kicker="INSIGHTS"
+        title="Insights"
+        subtitle="Screenshot-ready, plain-language cards you can forward to your model (§3.3.4)."
+        hue={PORTAL_HUES.insights}
+        icon="In"
+      />
+      <EmptyState
+        hue={PORTAL_HUES.insights}
+        icon="In"
+        title="No insights yet"
+        description="Insights arrive after the nightly pipeline approves candidates."
+      />
+    </>
   );
 }

@@ -1,8 +1,21 @@
+import { EmptyState, OPS_HUES, PageHeader } from '@xcrm/ui';
+
 export default function ContextNotesPage() {
   return (
-    <div className="flex flex-col gap-4">
-      <h1 className="text-2xl font-semibold">Context Notes</h1>
-      <p className="text-sm text-muted-foreground">Weighted signals injected into generation context.</p>
-    </div>
+    <>
+      <PageHeader
+        kicker="CONTEXT NOTES"
+        title="Context Notes"
+        subtitle="Weighted signals injected into generation context. Partner notes surface here for triage."
+        hue={OPS_HUES['context-notes']}
+        icon="Ct"
+      />
+      <EmptyState
+        hue={OPS_HUES['context-notes']}
+        icon="Ct"
+        title="No notes in the queue"
+        description="New partner notes land here for review before influencing weights."
+      />
+    </>
   );
 }

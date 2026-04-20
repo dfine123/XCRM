@@ -2,44 +2,85 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Design tokens live here. Apps don't redeclare; they consume via
+ * Tailwind classes or raw CSS vars. See packages/ui/tailwind-preset.cjs
+ * for the Tailwind surface.
+ *
+ * Section hues are NOT in CSS vars — they're parameters, passed by
+ * components via inline style. That keeps them composable
+ * (one card = one hue, no cascade surprises) while these vars stay
+ * hue-agnostic.
+ */
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222 47% 11%;
-    --muted: 210 40% 96%;
-    --muted-foreground: 215 16% 47%;
-    --primary: 222 47% 11%;
-    --primary-foreground: 0 0% 100%;
-    --destructive: 0 72% 51%;
-    --destructive-foreground: 0 0% 100%;
-    --accent: 210 40% 96%;
-    --accent-foreground: 222 47% 11%;
-    --border: 214 32% 91%;
-    --radius: 0.5rem;
-  }
+    /* surfaces — three depth tiers on a near-black base */
+    --bg-base: 10 11 15;
+    --bg-surface: 17 18 24;
+    --bg-raised: 20 22 28;
+    --bg-modal: 26 29 38;
 
-  .dark {
-    --background: 222 47% 6%;
-    --foreground: 210 40% 98%;
-    --muted: 217 33% 17%;
-    --muted-foreground: 215 20% 65%;
-    --primary: 210 40% 98%;
-    --primary-foreground: 222 47% 11%;
-    --destructive: 0 63% 45%;
-    --destructive-foreground: 0 0% 100%;
-    --accent: 217 33% 17%;
-    --accent-foreground: 210 40% 98%;
-    --border: 217 33% 17%;
+    /* foreground tiers */
+    --fg-default: 229 231 235;
+    --fg-dim: 163 163 163;
+    --fg-muted: 115 115 115;
+    --fg-faint: 82 82 89;
+
+    /* lines */
+    --border-default: 38 42 51;
+    --border-strong: 50 54 66;
+
+    --radius: 0.625rem;
   }
 
   * {
-    border-color: hsl(var(--border));
+    border-color: rgb(var(--border-default));
   }
+
+  html,
   body {
-    background-color: hsl(var(--background));
-    color: hsl(var(--foreground));
+    background-color: rgb(var(--bg-base));
+    color: rgb(var(--fg-default));
+  }
+
+  body {
     font-feature-settings:
       'rlig' 1,
-      'calt' 1;
+      'calt' 1,
+      'ss01' 1;
+    /* two low-intensity radial washes for atmospheric depth — fixed so
+       they don't scroll with content. Tuned low; on dense pages they
+       disappear under cards and nobody notices them consciously. */
+    background-image:
+      radial-gradient(1200px 600px at 20% -10%, rgba(99, 102, 241, 0.055), transparent 60%),
+      radial-gradient(1000px 500px at 90% 10%, rgba(236, 72, 153, 0.04), transparent 60%);
+    background-attachment: fixed;
+  }
+
+  /* Focus rings are hue-parameterized per component; this is the
+     fallback for anything un-themed. */
+  :focus-visible {
+    outline: none;
+  }
+
+  ::selection {
+    background: rgb(var(--fg-default) / 0.15);
+  }
+
+  /* Scrollbar — understated, dark, matches surfaces. */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgb(var(--border-strong));
+    border-radius: 999px;
+    border: 2px solid rgb(var(--bg-base));
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgb(var(--fg-faint));
   }
 }

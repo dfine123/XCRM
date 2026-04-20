@@ -1,8 +1,21 @@
+import { EmptyState, PageHeader, PORTAL_HUES } from '@xcrm/ui';
+
 export default function PortalBilling() {
   return (
-    <div className="flex flex-col gap-4">
-      <h1 className="text-2xl font-semibold">Billing</h1>
-      <p className="text-sm text-muted-foreground">Invoices and contract info.</p>
-    </div>
+    <>
+      <PageHeader
+        kicker="BILLING"
+        title="Billing"
+        subtitle="Monthly invoice, payment method, and contract info."
+        hue={PORTAL_HUES.billing}
+        icon="Bl"
+      />
+      <EmptyState
+        hue={PORTAL_HUES.billing}
+        icon="Bl"
+        title="No invoices yet"
+        description="Your first invoice drops on the 1st of next month."
+      />
+    </>
   );
 }

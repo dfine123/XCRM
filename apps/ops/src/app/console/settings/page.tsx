@@ -1,8 +1,17 @@
+import { EmptyState, PageHeader } from '@xcrm/ui';
+
 export default function SettingsPage() {
   return (
-    <div className="flex flex-col gap-4">
-      <h1 className="text-2xl font-semibold">Settings</h1>
-      <p className="text-sm text-muted-foreground">Ops configuration.</p>
-    </div>
+    <>
+      <PageHeader
+        kicker="SETTINGS"
+        title="Settings"
+        subtitle="Ops configuration — feature flags, scheduler controls, and partner defaults."
+      />
+      <EmptyState
+        title="Nothing to configure yet"
+        description="Configurable knobs land here as features come online."
+      />
+    </>
   );
 }

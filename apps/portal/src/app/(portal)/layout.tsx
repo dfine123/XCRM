@@ -1,18 +1,32 @@
 import { redirect } from 'next/navigation';
-import Link from 'next/link';
 import { currentSession, destroySession } from '@/lib/session';
 import { PRODUCT_NAME } from '@xcrm/shared/constants';
-import { Button } from '@xcrm/ui';
+import {
+  Button,
+  NavItem,
+  PORTAL_HUES,
+  Shell,
+  ShellBrand,
+  ShellFooter,
+  ShellNav,
+  ShellSection,
+} from '@xcrm/ui';
 
-const NAV = [
-  { href: '/overview', label: 'Overview' },
-  { href: '/accounts', label: 'Accounts' },
-  { href: '/library', label: 'Content Library' },
-  { href: '/requests', label: 'Content Requests' },
-  { href: '/insights', label: 'Insights' },
-  { href: '/billing', label: 'Billing' },
-  { href: '/settings', label: 'Settings' },
-];
+const NAV_PRIMARY = [
+  { href: '/overview', label: 'Overview', icon: 'Ov', hue: PORTAL_HUES.overview, match: 'exact' as const },
+] as const;
+
+const NAV_WORK = [
+  { href: '/accounts', label: 'Accounts', icon: 'Ac', hue: PORTAL_HUES.accounts },
+  { href: '/library', label: 'Content Library', icon: 'Lb', hue: PORTAL_HUES.library },
+  { href: '/requests', label: 'Content Requests', icon: 'Rq', hue: PORTAL_HUES.requests },
+  { href: '/insights', label: 'Insights', icon: 'In', hue: PORTAL_HUES.insights },
+] as const;
+
+const NAV_ACCOUNT = [
+  { href: '/billing', label: 'Billing', icon: 'Bl', hue: PORTAL_HUES.billing },
+  { href: '/settings', label: 'Settings', icon: 'St', hue: PORTAL_HUES.settings },
+] as const;
 
 export default async function PortalLayout({ children }: { children: React.ReactNode }) {
   const session = await currentSession();
@@ -25,30 +39,45 @@ export default async function PortalLayout({ children }: { children: React.React
   }
 
   return (
-    <div className="flex min-h-screen">
-      <aside className="flex w-56 flex-col border-r bg-muted/40 p-4">
-        <div className="mb-6">
-          <p className="text-lg font-semibold">{PRODUCT_NAME}</p>
-          <p className="text-xs text-muted-foreground">{session.name}</p>
-        </div>
-        <nav className="flex flex-1 flex-col gap-1 text-sm">
-          {NAV.map((n) => (
-            <Link
-              key={n.href}
-              href={n.href}
-              className="rounded-md px-3 py-2 hover:bg-accent hover:text-accent-foreground"
-            >
-              {n.label}
-            </Link>
-          ))}
-        </nav>
-        <form action={doSignOut}>
-          <Button type="submit" variant="ghost" size="sm" className="mt-4 w-full justify-start">
-            Sign out
-          </Button>
-        </form>
-      </aside>
-      <main className="flex-1 p-8">{children}</main>
-    </div>
+    <Shell
+      sidebar={
+        <>
+          <ShellBrand product={PRODUCT_NAME} subtitle={session.name} />
+          <ShellNav>
+            <ShellSection>
+              {NAV_PRIMARY.map((n) => (
+                <NavItem
+                  key={n.href}
+                  href={n.href}
+                  label={n.label}
+                  icon={n.icon}
+                  hue={n.hue}
+                  match={n.match}
+                />
+              ))}
+            </ShellSection>
+            <ShellSection label="Workspace">
+              {NAV_WORK.map((n) => (
+                <NavItem key={n.href} href={n.href} label={n.label} icon={n.icon} hue={n.hue} />
+              ))}
+            </ShellSection>
+            <ShellSection label="Account">
+              {NAV_ACCOUNT.map((n) => (
+                <NavItem key={n.href} href={n.href} label={n.label} icon={n.icon} hue={n.hue} />
+              ))}
+            </ShellSection>
+          </ShellNav>
+          <ShellFooter>
+            <form action={doSignOut}>
+              <Button type="submit" variant="ghost" size="sm" className="w-full justify-start">
+                Sign out
+              </Button>
+            </form>
+          </ShellFooter>
+        </>
+      }
+    >
+      {children}
+    </Shell>
   );
 }

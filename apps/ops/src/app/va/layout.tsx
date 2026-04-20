@@ -1,23 +1,26 @@
 import { auth, signOut } from '@/auth';
 import { redirect } from 'next/navigation';
-import Link from 'next/link';
 import { PRODUCT_NAME } from '@xcrm/shared/constants';
-import { Button } from '@xcrm/ui';
+import {
+  Button,
+  ShellBrand,
+  TopbarNavItem,
+  TopbarShell,
+  VA_HUES,
+} from '@xcrm/ui';
 
 const VA_NAV = [
-  { href: '/va', label: "Today's Batches" },
-  { href: '/va/batch', label: 'Current Batch' },
-  { href: '/va/escalations', label: 'Escalations' },
-  { href: '/va/stats', label: 'My Stats' },
+  { href: '/va', label: "Today's Batches", hue: VA_HUES.today, match: 'exact' as const },
+  { href: '/va/batch', label: 'Current Batch', hue: VA_HUES.batch },
+  { href: '/va/escalations', label: 'Escalations', hue: VA_HUES.escalations },
+  { href: '/va/stats', label: 'My Stats', hue: VA_HUES.stats },
 ];
 
 export default async function VALayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
   if (!session) redirect('/login');
-  const isVA =
-    session.user.role === 'VA_T1' ||
-    session.user.role === 'VA_T2' ||
-    session.user.role === 'VA_T3';
+  const { role, name } = session.user;
+  const isVA = role === 'VA_T1' || role === 'VA_T2' || role === 'VA_T3';
   if (!isVA) redirect('/console');
 
   async function doSignOut() {
@@ -26,28 +29,30 @@ export default async function VALayout({ children }: { children: React.ReactNode
   }
 
   return (
-    <div className="flex min-h-screen flex-col">
-      <header className="flex items-center justify-between border-b px-6 py-3">
-        <div className="flex items-center gap-6">
-          <span className="font-semibold">{PRODUCT_NAME}</span>
-          <nav className="flex gap-4 text-sm">
-            {VA_NAV.map((n) => (
-              <Link key={n.href} href={n.href} className="text-muted-foreground hover:text-foreground">
-                {n.label}
-              </Link>
-            ))}
-          </nav>
-        </div>
-        <div className="flex items-center gap-3 text-sm">
-          <span className="text-muted-foreground">{session.user.name}</span>
-          <form action={doSignOut}>
-            <Button type="submit" variant="ghost" size="sm">
-              Sign out
-            </Button>
-          </form>
-        </div>
-      </header>
-      <main className="flex-1">{children}</main>
-    </div>
+    <TopbarShell
+      brand={<ShellBrand product={PRODUCT_NAME} subtitle={`${name} · ${role.toLowerCase()}`} />}
+      nav={
+        <>
+          {VA_NAV.map((n) => (
+            <TopbarNavItem
+              key={n.href}
+              href={n.href}
+              label={n.label}
+              hue={n.hue}
+              match={n.match ?? 'prefix'}
+            />
+          ))}
+        </>
+      }
+      actions={
+        <form action={doSignOut}>
+          <Button type="submit" variant="ghost" size="sm">
+            Sign out
+          </Button>
+        </form>
+      }
+    >
+      <div className="mx-auto max-w-[1400px] px-8 py-8">{children}</div>
+    </TopbarShell>
   );
 }

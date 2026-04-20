@@ -1,8 +1,21 @@
+import { EmptyState, OPS_HUES, PageHeader } from '@xcrm/ui';
+
 export default function DevicesPage() {
   return (
-    <div className="flex flex-col gap-4">
-      <h1 className="text-2xl font-semibold">Devices</h1>
-      <p className="text-sm text-muted-foreground">Phone farm status + account assignment matrix.</p>
-    </div>
+    <>
+      <PageHeader
+        kicker="DEVICES"
+        title="Devices"
+        subtitle="Phone farm status and the account-to-device assignment matrix."
+        hue={OPS_HUES.devices}
+        icon="Dv"
+      />
+      <EmptyState
+        hue={OPS_HUES.devices}
+        icon="Dv"
+        title="No devices registered"
+        description="Register a phone to bind it to accounts."
+      />
+    </>
   );
 }

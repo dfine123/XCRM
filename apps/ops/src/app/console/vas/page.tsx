@@ -1,10 +1,22 @@
+import { Button, EmptyState, OPS_HUES, PageHeader } from '@xcrm/ui';
+
 export default function VAsPage() {
   return (
-    <div className="flex flex-col gap-4">
-      <h1 className="text-2xl font-semibold">VAs</h1>
-      <p className="text-sm text-muted-foreground">
-        Roster, accuracy leaderboard, sample review queue.
-      </p>
-    </div>
+    <>
+      <PageHeader
+        kicker="VAS"
+        title="Virtual Assistants"
+        subtitle="Roster, accuracy leaderboard, and the sample review queue ship in Phase 1."
+        hue={OPS_HUES.vas}
+        icon="VA"
+        actions={<Button size="sm" hue={OPS_HUES.vas}>Invite VA</Button>}
+      />
+      <EmptyState
+        hue={OPS_HUES.vas}
+        icon="VA"
+        title="No VAs on the roster"
+        description="Invite the first VA to start seeding the leaderboard."
+      />
+    </>
   );
 }

@@ -1,10 +1,22 @@
+import { Button, EmptyState, PageHeader, PORTAL_HUES } from '@xcrm/ui';
+
 export default function PortalRequests() {
   return (
-    <div className="flex flex-col gap-4">
-      <h1 className="text-2xl font-semibold">Content Requests</h1>
-      <p className="text-sm text-muted-foreground">
-        Each request links to the insight that prompted it (§3.3.3).
-      </p>
-    </div>
+    <>
+      <PageHeader
+        kicker="REQUESTS"
+        title="Content Requests"
+        subtitle="Each request links back to the insight that prompted it (§3.3.3)."
+        hue={PORTAL_HUES.requests}
+        icon="Rq"
+        actions={<Button size="sm" hue={PORTAL_HUES.requests}>New request</Button>}
+      />
+      <EmptyState
+        hue={PORTAL_HUES.requests}
+        icon="Rq"
+        title="No open requests"
+        description="Insights that need fresh content will surface a request here."
+      />
+    </>
   );
 }

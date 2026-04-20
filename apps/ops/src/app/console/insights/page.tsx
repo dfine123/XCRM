@@ -1,10 +1,21 @@
+import { EmptyState, OPS_HUES, PageHeader } from '@xcrm/ui';
+
 export default function InsightsPage() {
   return (
-    <div className="flex flex-col gap-4">
-      <h1 className="text-2xl font-semibold">Insights</h1>
-      <p className="text-sm text-muted-foreground">
-        Nightly candidate queue. Promote → influences generation weights. Demote → archived.
-      </p>
-    </div>
+    <>
+      <PageHeader
+        kicker="INSIGHTS"
+        title="Insights"
+        subtitle="Nightly candidate queue. Promote to influence generation weights. Demote to archive."
+        hue={OPS_HUES.insights}
+        icon="In"
+      />
+      <EmptyState
+        hue={OPS_HUES.insights}
+        icon="In"
+        title="No candidates tonight"
+        description="The insight pipeline drops candidates here after the nightly batch."
+      />
+    </>
   );
 }
