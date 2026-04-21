@@ -67,6 +67,12 @@ Target: under 10 minutes end-to-end for a new model including Drive
 connection. After completing this flow, the operator does not return to
 the onboarding surface for that model again.
 
+**Save and resume.** The wizard persists incrementally — an agency created
+in step 1 exists as a real row before step 2 opens. If the operator bails
+mid-flow, the partially-onboarded model is not lost: it surfaces as a
+signal light on the roster with a **"Resume onboarding"** action that
+drops the operator back at the step they left off.
+
 ### Surface 2 — Roster (the "is everything OK?" view)
 
 The default home after login. Checked when the operator wants to, not on
@@ -76,15 +82,30 @@ a schedule.
 
 - Name + archetype
 - Account handles with follower counts
-- **Signal lights** — content runway, escalated tasks, failed syncs,
-  quarantined accounts, review queue depth
+- **Signal lights** — concrete thresholds below
 - Last activity timestamp
+
+**Signal light thresholds** (tunable later; these exist so no component
+invents its own colors):
+
+| Signal              | Green             | Yellow                                      | Red                                       |
+| ------------------- | ----------------- | ------------------------------------------- | ----------------------------------------- |
+| Content runway      | > 7 days          | 3–7 days                                    | < 3 days                                  |
+| Escalated tasks     | 0 unresolved      | 1–2 unresolved on any of the model's accts  | 3+ unresolved                             |
+| Failed syncs        | 0 in last 24h     | 1–2 in last 24h                             | 3+ consecutive                            |
+| Quarantined accts   | 0                 | —                                           | any                                       |
+| Incomplete onboard  | —                 | `onboardingCompletedAt IS NULL`             | —                                         |
+| Review queue depth  | Count only — no color coding.                                                                            |
 
 **Sort order:** models with red signals first, then yellow, then alphabetical.
 If every model is green, the whole list is green and boring — that is the
 success state. A healthy roster looks like nothing.
 
 **Header strip:** a compact "Active notes: N" indicator, click to expand.
+**Hotkey `N`** opens the note overlay directly (see the context-note
+mechanic below). A full command palette (Cmd+K) is deferred to Build C at
+earliest — one-shot hotkey for now, palette once there are enough verbs
+to justify one.
 
 **Click a row →** model detail.
 
@@ -92,6 +113,13 @@ success state. A healthy roster looks like nothing.
 
 Per-model view. A reactive screen — operator opens it because a signal on
 the roster said "look here", deals with the thing, closes it.
+
+**Model detail is one URL** with internal sections rendered as
+anchor-navigable blocks on the page (not tabs, not sub-routes): overview,
+content, scheduled/recent posts, context notes, settings, audit. Density
+and scroll, not navigation. The operator finds what they're looking for
+by scanning vertically; anchor links in a sticky side-rail jump to the
+section without a page load.
 
 Contents:
 
@@ -119,8 +147,9 @@ The generator must produce great output even when zero notes are active.
 
 ### How operators invoke
 
-Globally available via **Cmd+K → "note" command**. Opens a small overlay,
-not a page. Fields:
+Globally available via the **`N` hotkey** (single-action, no command
+palette yet — palette is deferred to Build C at earliest). Opens a small
+overlay, not a page. Fields:
 
 - **Text** — the note itself. E.g. "@grok recreate me in this position is
   viral, weight heavily toward this format".
@@ -163,9 +192,22 @@ For each active account, for the upcoming window:
    reuses the `AssetUsage.none()` predicate shipped in feature 2).
 3. Load active context notes in scope.
 4. Load engagement history (what's performed well).
-5. Call the LLM with a structured prompt. Output: draft post (copy + asset
-   suggestion + scheduled time + confidence score).
-6. **Route by confidence.** Thresholds are per account status and tunable:
+5. **Draft generation (LLM).** Call the LLM with a structured prompt.
+   Output is strictly: `{ copy, assetId, confidence, reasoning }`. The
+   LLM does **not** pick scheduled time. Creative work only — no timing
+   heuristics baked into the prompt, no temporal reasoning leaking into
+   the model's output. Keeping these concerns separate lets us iterate
+   on timing independently of prompt engineering.
+6. **Scheduling (deterministic component).** A separate scheduler takes
+   the draft and picks `scheduledFor` based on:
+   - account **peak hours** (from engagement history per account)
+   - daily **cadence** for the `(archetype, status)` formula
+   - **spacing** from other items already scheduled for this account
+   - eventually: **camp repost coordination** (Build H) so a shared
+     asset isn't fired across multiple accounts within the same hour
+   The scheduler is pure logic — no LLM call. It's testable in isolation
+   and tunable without retraining prompts.
+7. **Route by confidence.** Thresholds are per account status and tunable:
    - `FRESH_BUILD` → always review (building generator trust for this account)
    - `ACTIVE_RAMPING` → review if confidence < 0.8
    - `ACTIVE_ESTABLISHED` → review if confidence < 0.7
