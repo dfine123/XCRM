@@ -80,5 +80,5 @@ EXPOSE 3000
 #   - seed.ts uses upserts
 #   - next start is stateless
 # Shell form so && chains through the same sh -c.
-# Rebuild trigger: 2026-04-20 (forces Railway to pick up migrations).
+# Rebuild trigger: 2026-04-21 reskin (force Railway to pick up OKLCH design).
 CMD ["sh", "-c", "pnpm --filter @xcrm/db migrate:deploy && pnpm --filter @xcrm/db db:seed && pnpm --filter @xcrm/ops start"]
