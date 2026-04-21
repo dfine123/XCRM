@@ -2,6 +2,88 @@
 
 Per spec §9 step 8 — every shipped feature logged here.
 
+## Unreleased — Feature 2: Drive ingest + Claude-vision auto-tagging (2026-04-21)
+
+First end-to-end content loop: operator connects a Google Drive folder to a
+model, the worker polls every 10 minutes, Claude-vision auto-tags each new
+asset, the per-model library renders thumbnails with auto-tags attached, and
+VAs (when role gating flips on) will see only assets that haven't been posted
+yet. Everything writes through audited server actions — no simplify-now
+shortcuts.
+
+- `packages/db`: schema additions + migration `20260421000000_feature_2_drive_ingest`.
+  New `DriveSource` (folder connection, soft-deletable, unique per
+  `modelId+folderId`, stores `cursor` for incremental poll), `DriveSync` (one
+  row per poll run with `filesSeen/Ingested/Skipped` counters + `error` + who
+  triggered it), `AssetAuditEvent` (DELETE / RESTORE / MANUAL_TAG_EDIT /
+  REVIEW_OVERRIDE — real audit rows, not JSON breadcrumbs). `ContentAsset`
+  gained `driveSourceId`, `driveFileId`, `driveChecksum` with a composite
+  unique on `(driveSourceId, driveFileId)` so poll re-runs are idempotent.
+- `packages/ai`: new workspace package. `tagAsset({ bytes, mime })` sends a
+  single image to Claude with the shared `assetTagPrompt()`, parses the JSON
+  response through zod, throws `AiTagError` on malformed output. System
+  prompt is marked `cache_control: ephemeral` so bulk folder syncs hit the
+  Anthropic prompt cache.
+- `packages/drive-adapter`: new workspace package wrapping `googleapis` +
+  service-account JWT auth. MIME-filters to `image/*` and `video/*`, exposes
+  `listFiles(folderId, { pageToken })` and `fetchFileBytes(fileId)`. Supports
+  shared drives.
+- `packages/jobs`:
+  - `queues.ts` now lazy-connects to Redis so ops can import
+    `enqueueDriveSync` at build time without a live Redis.
+  - `schedule.ts` registers a `driveSync` recurring job at
+    `DRIVE_SYNC_POLL_CRON` (default `*/10 * * * *`).
+  - `handlers/drive-sync.ts`: fan-out job (`recurring:driveSync`) reads all
+    active `DriveSource`s and enqueues one `sync-source` job each. Per-source
+    job opens a `DriveSync` row, paginates the folder, upserts each file by
+    the composite key, and re-enqueues the tagger when the md5 checksum
+    changes. Finalizes the `DriveSync` + `DriveSource` rows transactionally;
+    FAILED with `error` message on throw.
+  - `handlers/asset-auto-tagger.ts`: fetches bytes, calls `tagAsset`, writes
+    `autoTags` + flips `tagStatus` to TAGGED. Videos skip with empty auto-tags
+    (vision can't read them yet). On final attempt failure flips to FAILED so
+    the UI can surface it.
+  - `worker.ts` rewritten with a `HANDLERS: Record<QueueName, Processor>` map
+    so each queue gets its own handler — Phase-0 stubs remain for queues whose
+    features haven't landed yet.
+- `apps/ops`:
+  - `app/console/drive-sources/actions.ts`: `connectDriveSource`,
+    `disconnectDriveSource` (soft-delete), `triggerManualSync` — all zod +
+    `requireUser()` + `revalidatePath` on the model detail route.
+  - `app/console/content/actions.ts`: `softDeleteAsset`, `restoreAsset`,
+    `updateManualTags` — each wraps the ContentAsset mutation + an
+    `AssetAuditEvent` insert in a single `prisma.$transaction` so the trail
+    never drifts.
+  - `app/console/models/[id]`: replaced the placeholder card with a real
+    `ContentSourcesCard` — table of connected folders with last-sync status
+    tag, relative "last synced" timestamp, "Sync now" + "Disconnect" buttons,
+    and an inline connect form.
+  - `app/console/content/page.tsx`: rebuilt as an asset browser with URL-param
+    filters (`modelId`, `type`, `tagStatus`, `hidePosted` — default `true`
+    using `usages: { none: {} }`). Thumbnail grid, no pagination yet (cap
+    120 assets — enough for the first real folder).
+  - `app/console/content/[id]/page.tsx`: per-asset detail with preview, auto-
+    tags, editable manual tags, `AssetUsage` history, `AssetAuditEvent`
+    history, soft-delete/restore. URL-shareable for the VA compose modal in
+    feature 3.
+- `infra/env/.env.example`: added `GOOGLE_SERVICE_ACCOUNT_JSON` (base64)
+  and `DRIVE_SYNC_POLL_CRON`.
+
+Storage strategy — MVP uses `webContentLink` as `storageUrl`. If the operator
+revokes the service-account share, preview URLs 404. Mitigation (copy-on-
+ingest to R2) is a follow-up; flagged in the connect-form copy so the
+operator knows.
+
+VA-readiness crosscheck:
+- `DriveSource.createdByUserId`, `DriveSync.triggeredByUserId` populated on
+  every mutation.
+- Asset delete / restore / manual-tag edit each emit an `AssetAuditEvent`
+  with actor + kind + payload (including `{ before, after }` tag diff).
+- `hidePosted` picker predicate (`usages: { none: {} }`) already works today
+  in the ops browser — the VA compose modal in feature 3 reuses the same
+  query.
+- Soft-delete (`deletedAt`) honored on `DriveSource` and `ContentAsset` reads.
+
 ## Unreleased — Feature 1: core entity CRUD (2026-04-21)
 
 First working loop — shape of the product, backed by the real state machine.

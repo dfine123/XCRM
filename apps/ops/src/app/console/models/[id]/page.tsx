@@ -16,6 +16,7 @@ import {
   TD,
 } from '@xcrm/ui';
 import { ACCOUNT_STATUS_HUE } from '@/lib/status-hues';
+import { ContentSourcesCard } from './_components/content-sources-card';
 
 export default async function ModelDetailPage({ params }: { params: { id: string } }) {
   const model = await prisma.model.findFirst({
@@ -130,15 +131,7 @@ export default async function ModelDetailPage({ params }: { params: { id: string
             </Table>
           )}
 
-          <div className="mt-4 rounded-lg border border-dashed border-line bg-surface/40 p-5">
-            <h3 className="text-[11px] font-semibold uppercase tracking-[0.2em] text-fg-muted">
-              Content Sources
-            </h3>
-            <p className="mt-2 text-sm text-fg-dim">
-              Drive folder ingest lands in feature 2. Connect a folder to start auto-tagging assets
-              for this model.
-            </p>
-          </div>
+          <ContentSourcesCard modelId={model.id} />
         </section>
 
         <aside className="flex flex-col gap-4">

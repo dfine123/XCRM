@@ -21,6 +21,11 @@ export const RECURRING_JOBS: Array<{
   { queue: 'followerSnapshotter', cron: '5 */6 * * *', description: 'every 6h' },
   { queue: 'peakHourComputer', cron: '0 5 * * 1', description: 'Monday 05:00' },
   { queue: 'staleInsightRetirer', cron: '45 5 * * 1', description: 'Monday 05:45' },
+  {
+    queue: 'driveSync',
+    cron: process.env.DRIVE_SYNC_POLL_CRON || '*/10 * * * *',
+    description: 'every 10m — fan out one sync-source job per active DriveSource',
+  },
 ];
 
 export async function registerRecurringJobs(): Promise<void> {
