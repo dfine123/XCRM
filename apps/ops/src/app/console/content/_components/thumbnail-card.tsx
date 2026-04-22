@@ -14,9 +14,15 @@ const STATUS_HUE: Record<AssetTagStatus, Hue> = {
   FAILED: 25,
 };
 
-type AutoTags = Partial<
-  Record<'setting' | 'outfit' | 'pose' | 'aesthetic' | 'nsfwRating', string>
->;
+type AutoTags = Partial<{
+  setting: string;
+  outfit: string;
+  pose: string;
+  aesthetic: string;
+  mood: string;
+  lighting: string;
+  nsfwRating: string;
+}>;
 
 export function ThumbnailCard({
   asset,
@@ -89,6 +95,13 @@ export function ThumbnailCard({
             <span className="text-fg-faint">untagged</span>
           ) : null}
         </div>
+        {tags.mood || tags.lighting ? (
+          <div className="flex flex-wrap gap-1 text-[10px] uppercase tracking-[0.15em] text-fg-faint">
+            {tags.mood ? <span>{tags.mood}</span> : null}
+            {tags.mood && tags.lighting ? <span>·</span> : null}
+            {tags.lighting ? <span>{tags.lighting}</span> : null}
+          </div>
+        ) : null}
         {tags.nsfwRating && tags.nsfwRating !== 'SFW' ? (
           <span className="text-[10px] uppercase tracking-[0.2em] text-fg-faint">
             {tags.nsfwRating}

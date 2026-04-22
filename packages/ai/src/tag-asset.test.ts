@@ -82,4 +82,71 @@ describe('tagAsset', () => {
     const call = create.mock.calls[0]![0];
     expect(call.system[0].cache_control).toEqual({ type: 'ephemeral' });
   });
+
+  it('parses the full richer schema (caption, mood, lighting, palette, etc.)', async () => {
+    create.mockResolvedValue({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({
+            setting: 'hotel balcony at dusk',
+            outfit: 'cream linen robe',
+            pose: 'leaning on railing, looking out',
+            aesthetic: 'quiet-luxury',
+            mood: 'wistful',
+            lighting: 'golden-hour',
+            colorPalette: ['cream', 'terracotta', 'sage', 'navy'],
+            dominantSubject: 'full-body model, three-quarter view',
+            composition: 'rule-of-thirds',
+            textInImage: null,
+            faceCount: 1,
+            caption:
+              'A model in a cream linen robe leans on a hotel balcony railing at golden hour, looking wistfully at the horizon with warm terracotta light behind her.',
+            nsfwRating: 'SFW',
+          }),
+        },
+      ],
+    });
+
+    const { tagAsset } = await import('./tag-asset');
+    const result = await tagAsset({
+      bytes: Buffer.from('fake'),
+      mime: 'image/jpeg',
+    });
+    expect(result.mood).toBe('wistful');
+    expect(result.lighting).toBe('golden-hour');
+    expect(result.colorPalette).toEqual(['cream', 'terracotta', 'sage', 'navy']);
+    expect(result.faceCount).toBe(1);
+    expect(result.textInImage).toBeNull();
+    expect(result.caption?.startsWith('A model')).toBe(true);
+  });
+
+  it('is backward-compatible with the old (pre-intelligence) shape', async () => {
+    create.mockResolvedValue({
+      content: [
+        {
+          type: 'text',
+          text: '{"setting":"beach","nsfwRating":"SFW"}',
+        },
+      ],
+    });
+    const { tagAsset } = await import('./tag-asset');
+    const result = await tagAsset({
+      bytes: Buffer.from('fake'),
+      mime: 'image/jpeg',
+    });
+    expect(result.setting).toBe('beach');
+    expect(result.caption).toBeUndefined();
+    expect(result.mood).toBeUndefined();
+  });
+
+  it('rejects out-of-range faceCount', async () => {
+    create.mockResolvedValue({
+      content: [{ type: 'text', text: '{"nsfwRating":"SFW","faceCount":-1}' }],
+    });
+    const { tagAsset, AiTagError } = await import('./tag-asset');
+    await expect(
+      tagAsset({ bytes: Buffer.from('fake'), mime: 'image/jpeg' }),
+    ).rejects.toBeInstanceOf(AiTagError);
+  });
 });

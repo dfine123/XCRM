@@ -16,12 +16,25 @@ import {
   type Hue,
 } from '@xcrm/ui';
 import { relativeTime } from '@/lib/relative-time';
+import { computeNoveltyScore } from '@/lib/asset-novelty';
 import { ManualTagsForm } from './_components/manual-tags-form';
 import { DeleteAssetForm } from './_components/delete-asset-form';
 
-type AutoTags = Partial<
-  Record<'setting' | 'outfit' | 'pose' | 'aesthetic' | 'nsfwRating', string>
->;
+type AutoTags = Partial<{
+  setting: string;
+  outfit: string;
+  pose: string;
+  aesthetic: string;
+  nsfwRating: string;
+  mood: string;
+  lighting: string;
+  colorPalette: string[];
+  dominantSubject: string;
+  composition: string;
+  textInImage: string | null;
+  faceCount: number;
+  caption: string;
+}>;
 
 const STATUS_HUE: Record<'PENDING' | 'TAGGED' | 'FAILED', Hue> = {
   PENDING: 60,
@@ -71,6 +84,14 @@ export default async function AssetDetailPage({ params }: { params: { id: string
   // operator's browser. See /api/drive/file/[id].
   const src = `/api/drive/file/${asset.id}`;
   const isDeleted = asset.deletedAt !== null;
+  const novelty = computeNoveltyScore({
+    useCount: asset.useCount,
+    lastUsedAt: asset.lastUsedAt,
+  });
+  const noveltyHue: Hue = novelty > 0.7 ? 135 : novelty > 0.3 ? 60 : 25;
+  const colorPalette = Array.isArray(autoTags.colorPalette)
+    ? autoTags.colorPalette.filter((c): c is string => typeof c === 'string')
+    : [];
 
   return (
     <>
@@ -188,6 +209,50 @@ export default async function AssetDetailPage({ params }: { params: { id: string
         </section>
 
         <aside className="flex flex-col gap-4">
+          {autoTags.caption ? (
+            <Card className="p-5">
+              <h3 className="text-[11px] font-semibold uppercase tracking-[0.2em] text-fg-muted">
+                Caption
+              </h3>
+              <p className="mt-2 text-[13px] leading-relaxed text-fg">
+                {autoTags.caption}
+              </p>
+            </Card>
+          ) : null}
+
+          <Card className="p-5">
+            <h3 className="text-[11px] font-semibold uppercase tracking-[0.2em] text-fg-muted">
+              Signals
+            </h3>
+            <dl className="mt-3 grid grid-cols-[110px_1fr] gap-y-2 text-[13px]">
+              <dt className="text-fg-muted">Novelty</dt>
+              <dd className="flex items-center gap-2">
+                <Tag hue={noveltyHue} size="sm">
+                  {novelty.toFixed(2)}
+                </Tag>
+                <span className="text-[12px] text-fg-dim">
+                  {asset.useCount === 0
+                    ? 'never posted'
+                    : `${asset.useCount}× posted, last ${asset.lastUsedAt ? relativeTime(asset.lastUsedAt) : '—'}`}
+                </span>
+              </dd>
+              {typeof autoTags.faceCount === 'number' ? (
+                <>
+                  <dt className="text-fg-muted">Faces</dt>
+                  <dd className="text-fg">{autoTags.faceCount}</dd>
+                </>
+              ) : null}
+              {autoTags.textInImage ? (
+                <>
+                  <dt className="text-fg-muted">Text</dt>
+                  <dd className="whitespace-pre-wrap text-fg">
+                    &quot;{autoTags.textInImage}&quot;
+                  </dd>
+                </>
+              ) : null}
+            </dl>
+          </Card>
+
           <Card className="p-5">
             <h3 className="text-[11px] font-semibold uppercase tracking-[0.2em] text-fg-muted">
               Auto-tags
@@ -201,19 +266,47 @@ export default async function AssetDetailPage({ params }: { params: { id: string
                     : '—'}
               </p>
             ) : (
-              <dl className="mt-3 grid grid-cols-[90px_1fr] gap-y-2 text-[13px]">
+              <dl className="mt-3 grid grid-cols-[110px_1fr] gap-y-2 text-[13px]">
                 {(
-                  ['setting', 'outfit', 'pose', 'aesthetic', 'nsfwRating'] as const
-                ).map((k) =>
-                  autoTags[k] ? (
+                  [
+                    'setting',
+                    'outfit',
+                    'pose',
+                    'aesthetic',
+                    'mood',
+                    'lighting',
+                    'dominantSubject',
+                    'composition',
+                    'nsfwRating',
+                  ] as const
+                ).map((k) => {
+                  const v = autoTags[k];
+                  if (typeof v !== 'string' || !v) return null;
+                  const label =
+                    k === 'nsfwRating'
+                      ? 'NSFW'
+                      : k === 'dominantSubject'
+                        ? 'Subject'
+                        : k;
+                  return (
                     <Fragment key={k}>
-                      <dt className="text-fg-muted capitalize">
-                        {k === 'nsfwRating' ? 'NSFW' : k}
-                      </dt>
-                      <dd className="text-fg">{autoTags[k]}</dd>
+                      <dt className="text-fg-muted capitalize">{label}</dt>
+                      <dd className="text-fg">{v}</dd>
                     </Fragment>
-                  ) : null,
-                )}
+                  );
+                })}
+                {colorPalette.length > 0 ? (
+                  <>
+                    <dt className="text-fg-muted">Colors</dt>
+                    <dd className="flex flex-wrap gap-1">
+                      {colorPalette.map((c) => (
+                        <Tag key={c} hue={null} size="sm">
+                          {c}
+                        </Tag>
+                      ))}
+                    </dd>
+                  </>
+                ) : null}
               </dl>
             )}
           </Card>
