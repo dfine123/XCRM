@@ -1,11 +1,12 @@
 /**
  * Next.js instrumentation hook — runs once per server process at startup.
- * Registers an in-process node-cron that ticks the scheduled Drive sync
- * endpoint every N minutes.
+ * Two jobs:
+ *   - Validate GOOGLE_SERVICE_ACCOUNT_JSON shape (logs a clear error if
+ *     it's missing or unparseable, logs client_email prefix on success).
+ *   - If DRIVE_SYNC_SCHEDULE_ENABLED=true, register the in-process
+ *     node-cron that ticks POST /api/drive/sync/cron every N minutes.
  *
- * Opt-in via DRIVE_SYNC_SCHEDULE_ENABLED=true. On Railway, set that
- * variable on exactly ONE ops replica to avoid duplicate runs when
- * horizontally scaled. See /docs/infra/scheduled-jobs.md.
+ * See /docs/infra/scheduled-jobs.md for the scheduler contract.
  *
  * Why everything is crammed into this one file:
  *   - Next.js 14 compiles instrumentation.ts for BOTH edge + Node runtimes.
@@ -16,8 +17,12 @@
  *     cron logic must therefore live inside the guarded branch below — if
  *     it lived in a sibling module, webpackIgnore on THAT import would also
  *     leave the path unresolvable at runtime (.next/server has no src tree).
- *   - This file itself only imports node:* via the runtime dynamic import,
- *     so edge bundling produces a harmless no-op.
+ *   - Same reason we can't import @xcrm/drive-adapter for env validation —
+ *     it transitively drags in googleapis, which blows up the edge bundle.
+ *     The service-account parse below is therefore duplicated from
+ *     packages/drive-adapter/src/auth.ts. Kept intentionally minimal
+ *     (plain-JSON-then-base64-fallback); the full parser with PEM sanity
+ *     checks is what getDriveClient() uses at runtime.
  *
  * The cron tick loops back through the app's own HTTP API
  * (POST /api/drive/sync/cron) rather than importing the sync library
@@ -30,6 +35,9 @@ let registered = false;
 
 export async function register() {
   if (process.env.NEXT_RUNTIME !== 'nodejs') return;
+
+  validateServiceAccountEnvInline();
+
   if (process.env.DRIVE_SYNC_SCHEDULE_ENABLED !== 'true') {
     console.log('[instrumentation] DRIVE_SYNC_SCHEDULE_ENABLED != true — skipping cron.');
     return;
@@ -107,4 +115,66 @@ export async function register() {
   console.log(
     `[instrumentation] drive-sync cron registered with expression "${expr}" → ${target}`,
   );
+}
+
+/**
+ * Minimal parse-only check of GOOGLE_SERVICE_ACCOUNT_JSON. Kept in-file
+ * (not imported from @xcrm/drive-adapter) because that package drags in
+ * Node-only modules that break the edge-runtime bundle. The authoritative
+ * parser with PEM-shape checks lives at
+ * packages/drive-adapter/src/auth.ts and runs the first time getDriveClient
+ * is called.
+ */
+function validateServiceAccountEnvInline(): void {
+  const raw = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
+  if (!raw || raw.trim() === '') {
+    console.error(
+      '[instrumentation] GOOGLE_SERVICE_ACCOUNT_JSON is not set. Drive sync will fail until this is configured.',
+    );
+    return;
+  }
+
+  const trimmed = raw.trim();
+  let creds: unknown = null;
+  let via: 'plain' | 'base64' | null = null;
+  let plainErr = '';
+  try {
+    creds = JSON.parse(trimmed);
+    via = 'plain';
+  } catch (e) {
+    plainErr = e instanceof Error ? e.message : String(e);
+    try {
+      creds = JSON.parse(Buffer.from(trimmed, 'base64').toString('utf8'));
+      via = 'base64';
+    } catch (e2) {
+      const b64Err = e2 instanceof Error ? e2.message : String(e2);
+      console.error(
+        `[instrumentation] GOOGLE_SERVICE_ACCOUNT_JSON is unparseable (plain: "${plainErr}"; base64→JSON: "${b64Err}"). Paste the service-account JSON as one minified line.`,
+      );
+      return;
+    }
+  }
+
+  if (!creds || typeof creds !== 'object') {
+    console.error(
+      '[instrumentation] GOOGLE_SERVICE_ACCOUNT_JSON parsed to a non-object value.',
+    );
+    return;
+  }
+  const email = (creds as Record<string, unknown>).client_email;
+  if (typeof email !== 'string' || !email) {
+    console.error(
+      '[instrumentation] GOOGLE_SERVICE_ACCOUNT_JSON is missing client_email.',
+    );
+    return;
+  }
+  const prefix = email.slice(0, 20);
+  console.log(
+    `[instrumentation] GOOGLE_SERVICE_ACCOUNT_JSON ok (${via}) — client_email starts with "${prefix}…" (length ${email.length})`,
+  );
+  if (via === 'base64') {
+    console.log(
+      '[instrumentation] env is base64-encoded (legacy). Plain JSON is the canonical format going forward.',
+    );
+  }
 }

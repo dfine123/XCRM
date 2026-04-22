@@ -67,7 +67,10 @@ DRIVE_SYNC_SCHEDULE_ENABLED=true
 # Optional — defaults to every 15 minutes.
 DRIVE_SYNC_POLL_CRON=*/15 * * * *
 
-# Service-account JSON, base64-encoded (already configured for Feature 2)
+# Service-account JSON. Plain minified JSON is canonical; base64 is also
+# accepted for legacy values. ops logs the client_email prefix at startup
+# so you can verify the right key loaded. Share the target folder with
+# that client_email before connecting.
 GOOGLE_SERVICE_ACCOUNT_JSON=...
 
 # Claude API (already configured)
