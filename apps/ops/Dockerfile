@@ -37,13 +37,19 @@ WORKDIR /app
 FROM base AS builder
 
 # Copy manifests FIRST so the install layer caches on source edits.
+# Every workspace package MUST have its manifest staged before
+# `pnpm install --frozen-lockfile` — missing any one causes pnpm to
+# fail resolving the workspace graph, and Railway's builder returns
+# "Failed to build an image" with no visible logs.
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
-COPY apps/ops/package.json       ./apps/ops/
-COPY apps/portal/package.json    ./apps/portal/
-COPY packages/db/package.json    ./packages/db/
-COPY packages/shared/package.json ./packages/shared/
-COPY packages/ui/package.json    ./packages/ui/
-COPY packages/jobs/package.json  ./packages/jobs/
+COPY apps/ops/package.json              ./apps/ops/
+COPY apps/portal/package.json           ./apps/portal/
+COPY packages/ai/package.json           ./packages/ai/
+COPY packages/db/package.json           ./packages/db/
+COPY packages/drive-adapter/package.json ./packages/drive-adapter/
+COPY packages/jobs/package.json         ./packages/jobs/
+COPY packages/shared/package.json       ./packages/shared/
+COPY packages/ui/package.json           ./packages/ui/
 
 # --ignore-scripts: the db package has a postinstall that runs `prisma generate`,
 # but the schema file isn't copied yet. We run generate explicitly after source lands.
