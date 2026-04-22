@@ -27,6 +27,7 @@ vi.mock('@xcrm/db', () => ({
   prisma: prismaMock,
   AssetTagStatus: { PENDING: 'PENDING', TAGGED: 'TAGGED', FAILED: 'FAILED' },
   DriveSyncStatus: { RUNNING: 'RUNNING', SUCCEEDED: 'SUCCEEDED', FAILED: 'FAILED' },
+  DriveSourceStatus: { ACTIVE: 'ACTIVE', DISCONNECTED: 'DISCONNECTED' },
 }));
 
 vi.mock('@xcrm/drive-adapter', () => ({
@@ -98,8 +99,7 @@ describe('driveSyncHandler', () => {
       modelId: 'model-1',
       folderId: 'folder-1',
       cursor: null,
-      isActive: true,
-      deletedAt: null,
+      status: "ACTIVE",
     });
     prismaMock.driveSync.create.mockResolvedValue({ id: 'sync-1' });
     listFilesMock.mockResolvedValue({ files: [sampleFile], nextPageToken: null });
@@ -122,8 +122,7 @@ describe('driveSyncHandler', () => {
       modelId: 'model-1',
       folderId: 'folder-1',
       cursor: null,
-      isActive: true,
-      deletedAt: null,
+      status: "ACTIVE",
     });
     prismaMock.driveSync.create.mockResolvedValue({ id: 'sync-2' });
     listFilesMock.mockResolvedValue({ files: [sampleFile], nextPageToken: null });
@@ -151,8 +150,7 @@ describe('driveSyncHandler', () => {
       modelId: 'model-1',
       folderId: 'folder-1',
       cursor: null,
-      isActive: true,
-      deletedAt: null,
+      status: "ACTIVE",
     });
     prismaMock.driveSync.create.mockResolvedValue({ id: 'sync-3' });
     listFilesMock.mockResolvedValue({
@@ -182,8 +180,7 @@ describe('driveSyncHandler', () => {
       modelId: 'model-1',
       folderId: 'folder-1',
       cursor: null,
-      isActive: true,
-      deletedAt: null,
+      status: "ACTIVE",
     });
     prismaMock.driveSync.create.mockResolvedValue({ id: 'sync-4' });
     listFilesMock.mockRejectedValue(new Error('Drive 403: no permission'));
@@ -211,8 +208,7 @@ describe('driveSyncHandler', () => {
       modelId: 'model-1',
       folderId: 'folder-1',
       cursor: null,
-      isActive: false,
-      deletedAt: null,
+      status: "DISCONNECTED",
     });
     const { driveSyncHandler } = await import('./drive-sync');
     const result = (await driveSyncHandler(

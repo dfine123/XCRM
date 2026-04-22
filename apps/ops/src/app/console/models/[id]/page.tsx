@@ -17,6 +17,8 @@ import {
 } from '@xcrm/ui';
 import { ACCOUNT_STATUS_HUE } from '@/lib/status-hues';
 import { ContentSourcesCard } from './_components/content-sources-card';
+import { RemoveAccountButton } from './_components/remove-account-button';
+import { RemoveModelCard } from './_components/remove-model-card';
 
 export default async function ModelDetailPage({ params }: { params: { id: string } }) {
   const model = await prisma.model.findFirst({
@@ -118,12 +120,19 @@ export default async function ModelDetailPage({ params }: { params: { id: string
                       {a.followerCount.toLocaleString()}
                     </TD>
                     <TD className="text-right">
-                      <Link
-                        href={`/console/accounts/${a.id}`}
-                        className="text-[13px] text-fg-dim hover:text-fg"
-                      >
-                        Open →
-                      </Link>
+                      <div className="inline-flex items-center gap-2">
+                        <Link
+                          href={`/console/accounts/${a.id}`}
+                          className="text-[13px] text-fg-dim hover:text-fg"
+                        >
+                          Open →
+                        </Link>
+                        <RemoveAccountButton
+                          accountId={a.id}
+                          handle={a.handle}
+                          modelId={model.id}
+                        />
+                      </div>
                     </TD>
                   </TR>
                 ))}
@@ -179,6 +188,8 @@ export default async function ModelDetailPage({ params }: { params: { id: string
               </ul>
             )}
           </Card>
+
+          <RemoveModelCard modelId={model.id} displayName={model.displayName} />
         </aside>
       </div>
     </>

@@ -8,10 +8,12 @@ import {
   AgencyStatus,
   Archetype,
   AccountStatus,
+  DriveSourceStatus,
   PhoneDeviceStatus,
 } from '@xcrm/db';
 import { runDriveSync } from '@/lib/drive-sync';
 import { requireUser } from '@/lib/session';
+import { upsertDriveSource } from '../drive-sources/actions';
 import { parseDriveFolderId } from './_lib/drive-url';
 
 export type OnboardFormState = { error?: string } | null;
@@ -300,21 +302,17 @@ export async function submitStep4(
 
   let sourceId: string;
   try {
-    const created = await prisma.driveSource.create({
-      data: {
-        modelId: parsed.data.modelId,
-        folderId,
-        folderName: parsed.data.folderName,
-        createdByUserId: user.id,
-      },
-      select: { id: true },
+    const res = await upsertDriveSource({
+      modelId: parsed.data.modelId,
+      folderId,
+      folderName: parsed.data.folderName,
+      userId: user.id,
     });
-    sourceId = created.id;
-  } catch (e: unknown) {
-    if (e && typeof e === 'object' && 'code' in e && (e as { code?: string }).code === 'P2002') {
-      return { error: 'That folder is already connected to this model.' };
-    }
-    throw e;
+    sourceId = res.sourceId;
+  } catch (e) {
+    return {
+      error: e instanceof Error ? e.message : 'Could not connect folder.',
+    };
   }
 
   // Kick off an initial sync inline. Best-effort — the operator can re-sync
@@ -340,7 +338,9 @@ export async function completeOnboarding(formData: FormData): Promise<void> {
 
   const [accountCount, driveSourceCount] = await Promise.all([
     prisma.account.count({ where: { modelId, deletedAt: null } }),
-    prisma.driveSource.count({ where: { modelId, deletedAt: null } }),
+    prisma.driveSource.count({
+      where: { modelId, status: DriveSourceStatus.ACTIVE },
+    }),
   ]);
   if (accountCount === 0 || driveSourceCount === 0) return;
 

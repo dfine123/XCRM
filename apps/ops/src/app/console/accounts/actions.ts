@@ -111,6 +111,37 @@ export async function changeAccountStatus(formData: FormData): Promise<void> {
   revalidatePath('/console/accounts');
 }
 
+const idSchema = z.object({ id: z.string().min(1) });
+
+/**
+ * Soft-delete an account. The row persists for audit trail (StatusTransition
+ * history, AssetUsage, etc.) but the handle is freed for reuse because the
+ * partial unique index on Account.handle is scoped to deletedAt IS NULL.
+ * Supports a `redirectTo` field for UX (return to the model detail page).
+ */
+export async function softDeleteAccount(formData: FormData): Promise<void> {
+  await requireUser();
+  const parsed = idSchema.safeParse({ id: formData.get('id') });
+  if (!parsed.success) return;
+
+  const account = await prisma.account.findFirst({
+    where: { id: parsed.data.id, deletedAt: null },
+    select: { id: true, modelId: true },
+  });
+  if (!account) return;
+
+  await prisma.account.update({
+    where: { id: parsed.data.id },
+    data: { deletedAt: new Date() },
+  });
+
+  revalidatePath(`/console/accounts`);
+  revalidatePath(`/console/models/${account.modelId}`);
+
+  const redirectTo = String(formData.get('redirectTo') ?? '');
+  if (redirectTo.startsWith('/console/')) redirect(redirectTo);
+}
+
 const updateBindingSchema = z.object({
   id: z.string().min(1),
   phoneDeviceId: z.string().min(1),

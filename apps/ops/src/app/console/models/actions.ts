@@ -3,7 +3,7 @@
 import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
-import { prisma, Archetype } from '@xcrm/db';
+import { prisma, Archetype, DriveSourceStatus } from '@xcrm/db';
 import { requireUser } from '@/lib/session';
 
 /**
@@ -69,4 +69,49 @@ export async function createModel(
   revalidatePath('/console/models');
   revalidatePath(`/console/agencies/${parsed.data.agencyId}`);
   redirect(`/console/models/${model.id}`);
+}
+
+const idSchema = z.object({ id: z.string().min(1) });
+
+/**
+ * Soft-delete a model and cascade to its children so handles, folders etc.
+ * are freed for reuse. Cascades:
+ *   - Accounts: set deletedAt (frees handles via partial unique)
+ *   - DriveSources: mark DISCONNECTED so sync stops pulling from them
+ *
+ * ContentAssets, StatusTransitions, AssetUsage, etc. are intentionally
+ * left untouched — they remain queryable through the deleted model's id
+ * for audit purposes.
+ */
+export async function softDeleteModel(formData: FormData): Promise<void> {
+  await requireUser();
+  const parsed = idSchema.safeParse({ id: formData.get('id') });
+  if (!parsed.success) return;
+
+  const model = await prisma.model.findFirst({
+    where: { id: parsed.data.id, deletedAt: null },
+    select: { id: true, agencyId: true },
+  });
+  if (!model) return;
+
+  const now = new Date();
+  await prisma.$transaction([
+    prisma.account.updateMany({
+      where: { modelId: model.id, deletedAt: null },
+      data: { deletedAt: now },
+    }),
+    prisma.driveSource.updateMany({
+      where: { modelId: model.id, status: DriveSourceStatus.ACTIVE },
+      data: { status: DriveSourceStatus.DISCONNECTED, disconnectedAt: now },
+    }),
+    prisma.model.update({
+      where: { id: model.id },
+      data: { deletedAt: now },
+    }),
+  ]);
+
+  revalidatePath('/console/models');
+  revalidatePath('/console/accounts');
+  revalidatePath(`/console/agencies/${model.agencyId}`);
+  redirect('/console/models');
 }

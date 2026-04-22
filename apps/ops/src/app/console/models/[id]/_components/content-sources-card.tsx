@@ -1,4 +1,4 @@
-import { prisma } from '@xcrm/db';
+import { prisma, DriveSourceStatus } from '@xcrm/db';
 import {
   Button,
   OPS_HUES,
@@ -25,13 +25,12 @@ const SYNC_HUE: Record<'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'NEVER', Hue> = {
 
 export async function ContentSourcesCard({ modelId }: { modelId: string }) {
   const sources = await prisma.driveSource.findMany({
-    where: { modelId, deletedAt: null },
+    where: { modelId, status: DriveSourceStatus.ACTIVE },
     orderBy: { createdAt: 'desc' },
     select: {
       id: true,
       folderId: true,
       folderName: true,
-      isActive: true,
       lastSyncedAt: true,
       lastSyncStatus: true,
     },

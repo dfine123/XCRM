@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
-import { prisma } from '@xcrm/db';
+import { prisma, DriveSourceStatus } from '@xcrm/db';
 import { revalidatePath } from 'next/cache';
 import { runDriveSync } from '@/lib/drive-sync';
 
@@ -33,9 +33,9 @@ export async function POST(
 
   const source = await prisma.driveSource.findUnique({
     where: { id: sourceId },
-    select: { modelId: true, isActive: true, deletedAt: true },
+    select: { modelId: true, status: true },
   });
-  if (!source || !source.isActive || source.deletedAt) {
+  if (!source || source.status !== DriveSourceStatus.ACTIVE) {
     return NextResponse.json({ error: 'source not found' }, { status: 404 });
   }
 

@@ -10,8 +10,10 @@ async function requestMagicLink(formData: FormData) {
   'use server';
   const parsed = emailSchema.safeParse(formData.get('email'));
   if (!parsed.success) return;
-  const user = await prisma.agencyUser.findUnique({ where: { email: parsed.data } });
-  if (!user || user.deletedAt) return; // silent — don't leak account existence
+  const user = await prisma.agencyUser.findFirst({
+    where: { email: parsed.data, deletedAt: null },
+  });
+  if (!user) return; // silent — don't leak account existence
   const token = crypto.randomBytes(32).toString('hex');
   const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
   await prisma.agencyMagicLink.create({

@@ -41,8 +41,10 @@ const nextAuth: NextAuthResult = NextAuth({
       authorize: async (raw) => {
         const parsed = credentialsSchema.safeParse(raw);
         if (!parsed.success) return null;
-        const user = await prisma.user.findUnique({ where: { email: parsed.data.email } });
-        if (!user || user.deletedAt || user.status !== UserStatus.ACTIVE) return null;
+        const user = await prisma.user.findFirst({
+          where: { email: parsed.data.email, deletedAt: null },
+        });
+        if (!user || user.status !== UserStatus.ACTIVE) return null;
         if (!user.passwordHash) return null;
         const ok = await bcrypt.compare(parsed.data.password, user.passwordHash);
         if (!ok) return null;

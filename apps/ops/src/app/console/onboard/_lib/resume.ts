@@ -1,4 +1,4 @@
-import { prisma } from '@xcrm/db';
+import { prisma, DriveSourceStatus } from '@xcrm/db';
 
 export type OnboardStep = 1 | 2 | 3 | 4 | 5;
 
@@ -13,7 +13,7 @@ export async function computeResumeStep(modelId: string): Promise<OnboardStep> {
       where: { modelId, deletedAt: null },
     }),
     prisma.driveSource.count({
-      where: { modelId, deletedAt: null },
+      where: { modelId, status: DriveSourceStatus.ACTIVE },
     }),
   ]);
 

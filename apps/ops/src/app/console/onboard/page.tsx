@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
-import { prisma, Archetype } from '@xcrm/db';
+import { prisma, Archetype, DriveSourceStatus } from '@xcrm/db';
 import { Button, EmptyState, PageHeader, Tag } from '@xcrm/ui';
 import { requireUser } from '@/lib/session';
 import { computeResumeStep, type OnboardStep } from './_lib/resume';
@@ -52,7 +52,7 @@ export default async function OnboardPage({
           orderBy: { createdAt: 'asc' },
         },
         driveSources: {
-          where: { deletedAt: null },
+          where: { status: DriveSourceStatus.ACTIVE },
           select: { id: true, folderName: true, folderId: true },
           orderBy: { createdAt: 'asc' },
         },
@@ -160,7 +160,7 @@ export default async function OnboardPage({
         _count: {
           select: {
             accounts: { where: { deletedAt: null } },
-            driveSources: { where: { deletedAt: null } },
+            driveSources: { where: { status: DriveSourceStatus.ACTIVE } },
           },
         },
       },

@@ -1,4 +1,4 @@
-import { prisma, AssetTagStatus, DriveSyncStatus } from '@xcrm/db';
+import { prisma, AssetTagStatus, DriveSyncStatus, DriveSourceStatus } from '@xcrm/db';
 import { listFiles, mapMimeToAssetType, type DriveFile } from '@xcrm/drive-adapter';
 import { tagAssetInline } from './asset-tagger';
 
@@ -41,11 +41,10 @@ export async function runDriveSync(
       folderId: true,
       folderName: true,
       cursor: true,
-      isActive: true,
-      deletedAt: true,
+      status: true,
     },
   });
-  if (!source || !source.isActive || source.deletedAt) {
+  if (!source || source.status !== DriveSourceStatus.ACTIVE) {
     return {
       ok: false,
       filesSeen: 0,
@@ -170,7 +169,7 @@ export async function runDriveSync(
  */
 export async function runScheduledDriveSyncs(): Promise<{ sourcesRun: number }> {
   const sources = await prisma.driveSource.findMany({
-    where: { isActive: true, deletedAt: null },
+    where: { status: DriveSourceStatus.ACTIVE },
     select: { id: true },
   });
   console.log(`[drive-sync:cron] fan-out for ${sources.length} active sources`);

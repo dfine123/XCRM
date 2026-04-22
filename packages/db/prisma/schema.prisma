@@ -32,7 +32,7 @@ enum UserStatus {
 
 model User {
   id             String     @id @default(cuid())
-  email          String     @unique
+  email          String
   name           String
   role           UserRole
   timezone       String     @default("UTC")
@@ -60,6 +60,7 @@ model User {
   triggeredDriveSyncs     DriveSync[]
   assetAuditEvents        AssetAuditEvent[]
 
+  @@index([email])
   @@index([role, status])
 }
 
@@ -87,7 +88,7 @@ enum AgencyUserRole {
 
 model AgencyUser {
   id       String         @id @default(cuid())
-  email    String         @unique
+  email    String
   name     String
   agencyId String
   role     AgencyUserRole
@@ -102,6 +103,7 @@ model AgencyUser {
   uploadedAssets  ContentAsset[]
 
   @@index([agencyId])
+  @@index([email])
 }
 
 model AgencyMagicLink {
@@ -143,7 +145,7 @@ enum AgencyStatus {
 model Agency {
   id                   String       @id @default(cuid())
   name                 String
-  slug                 String       @unique
+  slug                 String
   status               AgencyStatus @default(PROSPECT)
   retentionRiskScore   Float        @default(0)
 
@@ -156,6 +158,7 @@ model Agency {
   agencyUsers  AgencyUser[]
 
   @@index([status])
+  @@index([slug])
 }
 
 enum ContractTier {
@@ -241,8 +244,8 @@ enum AccountStatus {
 model Account {
   id                String        @id @default(cuid())
   modelId           String
-  handle            String        @unique
-  platformAccountId String?       @unique
+  handle            String
+  platformAccountId String?
   status            AccountStatus @default(PROSPECT)
   statusChangedAt   DateTime      @default(now())
   followerCount     Int           @default(0)
@@ -270,6 +273,8 @@ model Account {
   @@index([modelId])
   @@index([status])
   @@index([phoneDeviceId])
+  @@index([handle])
+  @@index([platformAccountId])
 }
 
 enum PhoneDeviceStatus {
@@ -388,20 +393,30 @@ enum DriveSyncStatus {
   FAILED
 }
 
+// DriveSource uses an explicit status enum rather than a deletedAt soft-delete
+// so "reconnect a previously-disconnected folder" is a single-row state
+// transition (DISCONNECTED → ACTIVE) rather than an insert that collides with
+// a leftover soft-deleted row. The (modelId, folderId) unique stays
+// unconditional — we never insert duplicates because reconnect reactivates.
+enum DriveSourceStatus {
+  ACTIVE
+  DISCONNECTED
+}
+
 model DriveSource {
-  id              String           @id @default(cuid())
+  id              String            @id @default(cuid())
   modelId         String
   folderId        String
   folderName      String
   createdByUserId String
-  isActive        Boolean          @default(true)
+  status          DriveSourceStatus @default(ACTIVE)
+  disconnectedAt  DateTime?
   lastSyncedAt    DateTime?
   lastSyncStatus  DriveSyncStatus?
   cursor          String?
 
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  deletedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   model     Model          @relation(fields: [modelId], references: [id], onDelete: Restrict)
   createdBy User           @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
@@ -409,7 +424,7 @@ model DriveSource {
   assets    ContentAsset[]
 
   @@unique([modelId, folderId])
-  @@index([modelId, isActive])
+  @@index([modelId, status])
 }
 
 model DriveSync {
@@ -507,7 +522,7 @@ model Post {
   assetIds          String[]   @default([])
   scheduledFor      DateTime?
   postedAt          DateTime?
-  platformPostId    String?    @unique
+  platformPostId    String?
   generatedByUserId String?
   generationMeta    Json       @default("{}")
   approvedByUserId  String?
@@ -529,6 +544,7 @@ model Post {
   @@index([accountId, status])
   @@index([scheduledFor])
   @@index([status])
+  @@index([platformPostId])
 }
 
 enum ReplyStatus {

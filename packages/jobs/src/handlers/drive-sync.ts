@@ -1,5 +1,5 @@
 import { Job } from 'bullmq';
-import { prisma, AssetTagStatus, DriveSyncStatus } from '@xcrm/db';
+import { prisma, AssetTagStatus, DriveSyncStatus, DriveSourceStatus } from '@xcrm/db';
 import { listFiles, mapMimeToAssetType, type DriveFile } from '@xcrm/drive-adapter';
 import { enqueueAssetAutoTag, enqueueDriveSync } from '../enqueue';
 
@@ -23,7 +23,7 @@ export async function driveSyncHandler(job: Job): Promise<unknown> {
 
 async function fanOutActiveSources(): Promise<{ enqueued: number }> {
   const active = await prisma.driveSource.findMany({
-    where: { isActive: true, deletedAt: null },
+    where: { status: DriveSourceStatus.ACTIVE },
     select: { id: true },
   });
   for (const s of active) {
@@ -43,11 +43,10 @@ async function syncOneSource(
       modelId: true,
       folderId: true,
       cursor: true,
-      isActive: true,
-      deletedAt: true,
+      status: true,
     },
   });
-  if (!source || !source.isActive || source.deletedAt) {
+  if (!source || source.status !== DriveSourceStatus.ACTIVE) {
     return { filesSeen: 0, filesIngested: 0, filesSkipped: 0 };
   }
 
