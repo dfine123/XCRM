@@ -3,8 +3,8 @@
 import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
 import { prisma } from '@xcrm/db';
-import { enqueueDriveSync } from '@xcrm/jobs';
 import { requireUser } from '@/lib/session';
+import { runDriveSync } from '@/lib/drive-sync';
 
 const connectSchema = z.object({
   modelId: z.string().min(1),
@@ -56,12 +56,15 @@ export async function connectDriveSource(
     throw e;
   }
 
-  // Best-effort initial sync. If Redis is down we still return success —
-  // the operator can hit "Sync now" once infra is back.
+  // Kick off an initial sync inline. Best-effort — if it fails we still
+  // return success and the operator can hit "Sync now" to retry.
   try {
-    await enqueueDriveSync(sourceId, { triggeredByUserId: user.id });
-  } catch {
-    // swallow — surfaced via last-sync badge staying null
+    await runDriveSync(sourceId, { triggeredByUserId: user.id });
+  } catch (err) {
+    console.error(
+      `[drive-sources] initial sync after connect failed:`,
+      err instanceof Error ? err.message : String(err),
+    );
   }
 
   revalidatePath(`/console/models/${parsed.data.modelId}`);
@@ -85,22 +88,6 @@ export async function disconnectDriveSource(formData: FormData): Promise<void> {
     where: { id: parsed.data.id },
     data: { isActive: false, deletedAt: new Date() },
   });
-
-  revalidatePath(`/console/models/${source.modelId}`);
-}
-
-export async function triggerManualSync(formData: FormData): Promise<void> {
-  const user = await requireUser();
-  const parsed = idSchema.safeParse({ id: formData.get('id') });
-  if (!parsed.success) return;
-
-  const source = await prisma.driveSource.findUnique({
-    where: { id: parsed.data.id },
-    select: { modelId: true, isActive: true, deletedAt: true },
-  });
-  if (!source || !source.isActive || source.deletedAt) return;
-
-  await enqueueDriveSync(parsed.data.id, { triggeredByUserId: user.id });
 
   revalidatePath(`/console/models/${source.modelId}`);
 }

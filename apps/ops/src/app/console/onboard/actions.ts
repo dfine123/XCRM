@@ -10,7 +10,7 @@ import {
   AccountStatus,
   PhoneDeviceStatus,
 } from '@xcrm/db';
-import { enqueueDriveSync } from '@xcrm/jobs';
+import { runDriveSync } from '@/lib/drive-sync';
 import { requireUser } from '@/lib/session';
 import { parseDriveFolderId } from './_lib/drive-url';
 
@@ -317,11 +317,15 @@ export async function submitStep4(
     throw e;
   }
 
-  // Best-effort initial sync — if Redis is down the operator can retry later.
+  // Kick off an initial sync inline. Best-effort — the operator can re-sync
+  // from the model detail page if anything goes wrong.
   try {
-    await enqueueDriveSync(sourceId, { triggeredByUserId: user.id });
-  } catch {
-    // swallow
+    await runDriveSync(sourceId, { triggeredByUserId: user.id });
+  } catch (err) {
+    console.error(
+      `[onboard:step4] initial sync failed sourceId=${sourceId}:`,
+      err instanceof Error ? err.message : String(err),
+    );
   }
 
   redirect(`/console/onboard?modelId=${parsed.data.modelId}&step=5`);

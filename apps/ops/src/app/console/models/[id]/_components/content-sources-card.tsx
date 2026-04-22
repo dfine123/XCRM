@@ -11,12 +11,10 @@ import {
   TD,
   type Hue,
 } from '@xcrm/ui';
-import {
-  disconnectDriveSource,
-  triggerManualSync,
-} from '@/app/console/drive-sources/actions';
+import { disconnectDriveSource } from '@/app/console/drive-sources/actions';
 import { relativeTime } from '@/lib/relative-time';
 import { ConnectDriveForm } from './connect-drive-form';
+import { SyncNowButton } from './sync-now-button';
 
 const SYNC_HUE: Record<'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'NEVER', Hue> = {
   RUNNING: 210,
@@ -86,12 +84,7 @@ export async function ContentSourcesCard({ modelId }: { modelId: string }) {
                   <TD className="text-fg-dim">{relativeTime(s.lastSyncedAt)}</TD>
                   <TD className="text-right">
                     <div className="inline-flex items-center gap-2">
-                      <form action={triggerManualSync}>
-                        <input type="hidden" name="id" value={s.id} />
-                        <Button type="submit" size="sm" variant="ghost" hue={OPS_HUES.content}>
-                          Sync now
-                        </Button>
-                      </form>
+                      <SyncNowButton sourceId={s.id} />
                       <form action={disconnectDriveSource}>
                         <input type="hidden" name="id" value={s.id} />
                         <Button type="submit" size="sm" variant="ghost">
