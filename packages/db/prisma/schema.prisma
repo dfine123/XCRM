@@ -196,14 +196,15 @@ enum Archetype {
 }
 
 model Model {
-  id              String    @id @default(cuid())
-  agencyId        String
-  displayName     String
-  realName        String
-  archetype       Archetype
-  voiceToneNotes  String    @db.Text
-  hardRules       Json      @default("[]")
-  softPreferences Json      @default("[]")
+  id                    String    @id @default(cuid())
+  agencyId              String
+  displayName           String
+  realName              String
+  archetype             Archetype
+  voiceToneNotes        String    @db.Text
+  hardRules             Json      @default("[]")
+  softPreferences       Json      @default("[]")
+  onboardingCompletedAt DateTime?
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt

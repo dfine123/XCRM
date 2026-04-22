@@ -14,6 +14,8 @@ import {
 
 const NAV_PRIMARY = [
   { href: '/console', label: 'Dashboard', icon: 'D', hue: OPS_HUES.dashboard },
+  // Literal hue 100 until Build B reshapes nav + formalizes OPS_HUES.
+  { href: '/console/onboard', label: 'Onboard', icon: 'On', hue: 100 },
 ] as const;
 
 const NAV_WORK = [

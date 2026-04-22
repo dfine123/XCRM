@@ -2,6 +2,48 @@
 
 Per spec §9 step 8 — every shipped feature logged here.
 
+## Unreleased — Build A: guided model onboarding wizard (2026-04-22)
+
+First operator surface from the operational-model doc (Surface 1: Onboarding).
+Replaces the scattered "new agency / new model / new account / connect drive"
+paths with one linear flow that takes an operator from empty state to active
+model in under ten minutes. Saves after every step — close the tab, come back
+later, resume where you left off.
+
+- `packages/db`: `Model.onboardingCompletedAt DateTime?` +
+  migration `20260421010000_build_a_onboarding`. Null = in progress, set =
+  activated. Drives the resume-list predicate on `/console/onboard`.
+- `apps/ops/src/app/console/onboard`:
+  - `page.tsx` — URL-driven dispatcher. No params → entry (resume list +
+    "Start new" → step 1). `?agencyId=X` → step 2. `?modelId=X[&step=N]` →
+    resume at computed step (never skips ahead; capped at
+    `computeResumeStep()`). Completed model redirects to
+    `/console/models/[id]`.
+  - `_lib/resume.ts` — `computeResumeStep(modelId)`: 3 if no accounts, 4 if no
+    drive sources, else 5. Linear, no skipping.
+  - `_lib/drive-url.ts` — `parseDriveFolderId()` accepts `/folders/<ID>`,
+    `?id=<ID>`, or a raw ID.
+  - `actions.ts` — seven server actions, all zod-validated +
+    `requireUser()`. Step 1 creates-or-picks an agency, step 2 creates a
+    model, step 3 adds accounts (can inline-create a PhoneDevice), step 4
+    connects a DriveSource and best-effort enqueues an initial sync, step 5
+    stamps `onboardingCompletedAt`. `abandonOnboarding` soft-deletes an
+    in-progress model.
+  - `_components/` — `stepper.tsx` (5-step indicator, accent hue 100) plus
+    one component per step. Each step component is a client form using
+    `useFormState` / `useFormStatus`; the wizard page itself is a server
+    component.
+- `apps/ops/src/app/console/layout.tsx`: added `/console/onboard` as a
+  `NAV_PRIMARY` entry (alongside Dashboard) with icon `On`, literal hue 100.
+  Build B will reshape the nav into the three operator surfaces and formalize
+  `OPS_HUES` — literal here keeps Build A scoped.
+
+VA-readiness crosscheck:
+- `DriveSource.createdByUserId` captured at step 4 (same path as feature 2).
+- Account + PhoneDevice inline-creation in step 3 uses the same creation
+  paths as the standalone pages — no parallel write path to unwind.
+- `onboardingCompletedAt` is additive; no existing reads change behavior.
+
 ## Unreleased — Feature 2: Drive ingest + Claude-vision auto-tagging (2026-04-21)
 
 First end-to-end content loop: operator connects a Google Drive folder to a
