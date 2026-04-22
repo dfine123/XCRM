@@ -61,7 +61,13 @@ COPY . .
 
 ENV NEXT_TELEMETRY_DISABLED=1
 
-RUN pnpm --filter @xcrm/db generate \
+# Explicitly wipe any Prisma Client that was dropped in by `pnpm install`'s
+# postinstall, then regenerate from the *current* schema. Railway's Docker
+# layer cache has burned us at least twice by reusing a stale generated
+# client — the `rm` + fresh `generate` is cheap insurance that the client
+# on-disk always matches packages/db/prisma/schema.prisma.
+RUN rm -rf node_modules/.prisma node_modules/.pnpm/@prisma+client*/node_modules/.prisma \
+    && pnpm --filter @xcrm/db generate \
     && pnpm --filter @xcrm/ops build
 
 # -----------------------------------------------------------------------------

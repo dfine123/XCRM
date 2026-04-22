@@ -2,8 +2,15 @@
  * Idempotent seed for local dev + first Railway deploy.
  *
  * Runs via `pnpm --filter @xcrm/db db:seed`, and also on every ops
- * container boot (see apps/ops/Dockerfile CMD). Every write is an
- * upsert, so re-running is a no-op.
+ * container boot (see apps/ops/Dockerfile CMD). Every write is a
+ * findFirst + conditional create/update, so re-running is a no-op.
+ *
+ * We deliberately avoid Prisma's `upsert({where:{email}})` shape here —
+ * soft-deletable fields (email, slug) use partial unique indexes at the
+ * DB layer to let operators reuse a value after soft-delete, and the
+ * matching schema wiring has historically been fragile around Docker
+ * layer caches. Hand-rolling the upsert with findFirst + create/update
+ * makes the seed schema-detail-agnostic.
  *
  * Portal note: AgencyUser has no passwordHash — the portal
  * authenticates by magic link (see apps/portal/src/app/api/auth/consume).
@@ -36,53 +43,84 @@ async function main(): Promise<void> {
   ];
 
   for (const u of opsUsers) {
-    await prisma.user.upsert({
+    const existing = await prisma.user.findFirst({
       where: { email: u.email },
-      // If a previously-seeded user was soft-deleted, reset deletedAt so the
-      // seed is truly idempotent. Partial unique on User.email means a
-      // create-branch fallback would also work, but update is cheaper.
-      update: {
-        name: u.name,
-        role: u.role,
-        status: UserStatus.ACTIVE,
-        passwordHash,
-        deletedAt: null,
-      },
-      create: {
-        email: u.email,
-        name: u.name,
-        role: u.role,
-        status: UserStatus.ACTIVE,
-        passwordHash,
-      },
+      select: { id: true },
     });
+    if (existing) {
+      await prisma.user.update({
+        where: { id: existing.id },
+        data: {
+          name: u.name,
+          role: u.role,
+          status: UserStatus.ACTIVE,
+          passwordHash,
+          deletedAt: null,
+        },
+      });
+    } else {
+      await prisma.user.create({
+        data: {
+          email: u.email,
+          name: u.name,
+          role: u.role,
+          status: UserStatus.ACTIVE,
+          passwordHash,
+        },
+      });
+    }
   }
 
-  const agency = await prisma.agency.upsert({
+  const existingAgency = await prisma.agency.findFirst({
     where: { slug: 'test-agency' },
-    update: { name: 'Test Agency', status: AgencyStatus.ACTIVE, deletedAt: null },
-    create: { name: 'Test Agency', slug: 'test-agency', status: AgencyStatus.ACTIVE },
+    select: { id: true },
   });
+  const agency = existingAgency
+    ? await prisma.agency.update({
+        where: { id: existingAgency.id },
+        data: {
+          name: 'Test Agency',
+          status: AgencyStatus.ACTIVE,
+          deletedAt: null,
+        },
+      })
+    : await prisma.agency.create({
+        data: {
+          name: 'Test Agency',
+          slug: 'test-agency',
+          status: AgencyStatus.ACTIVE,
+        },
+      });
 
-  const agencyUser = await prisma.agencyUser.upsert({
+  const existingAgencyUser = await prisma.agencyUser.findFirst({
     where: { email: 'agency@test.local' },
-    update: {
-      name: 'Agency Owner',
-      agencyId: agency.id,
-      role: AgencyUserRole.AGENCY_OWNER,
-      deletedAt: null,
-    },
-    create: {
-      email: 'agency@test.local',
-      name: 'Agency Owner',
-      agencyId: agency.id,
-      role: AgencyUserRole.AGENCY_OWNER,
-    },
+    select: { id: true },
   });
+  const agencyUser = existingAgencyUser
+    ? await prisma.agencyUser.update({
+        where: { id: existingAgencyUser.id },
+        data: {
+          name: 'Agency Owner',
+          agencyId: agency.id,
+          role: AgencyUserRole.AGENCY_OWNER,
+          deletedAt: null,
+        },
+      })
+    : await prisma.agencyUser.create({
+        data: {
+          email: 'agency@test.local',
+          name: 'Agency Owner',
+          agencyId: agency.id,
+          role: AgencyUserRole.AGENCY_OWNER,
+        },
+      });
 
-  const magicToken = process.env.SEED_AGENCY_MAGIC_TOKEN ?? DEFAULT_AGENCY_MAGIC_TOKEN;
+  const magicToken =
+    process.env.SEED_AGENCY_MAGIC_TOKEN ?? DEFAULT_AGENCY_MAGIC_TOKEN;
   const tokenHash = crypto.createHash('sha256').update(magicToken).digest('hex');
   const expiresAt = new Date(Date.now() + 1000 * 60 * 60 * 24 * 30); // 30d
+  // AgencyMagicLink.tokenHash stays @unique unconditionally — no soft-delete
+  // on this entity — so keeping upsert here is fine.
   await prisma.agencyMagicLink.upsert({
     where: { tokenHash },
     update: { agencyUserId: agencyUser.id, expiresAt, usedAt: null },
