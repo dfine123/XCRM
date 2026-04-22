@@ -32,7 +32,7 @@ enum UserStatus {
 
 model User {
   id             String     @id @default(cuid())
-  email          String
+  email          String     @unique
   name           String
   role           UserRole
   timezone       String     @default("UTC")
@@ -60,7 +60,6 @@ model User {
   triggeredDriveSyncs     DriveSync[]
   assetAuditEvents        AssetAuditEvent[]
 
-  @@index([email])
   @@index([role, status])
 }
 
@@ -88,7 +87,7 @@ enum AgencyUserRole {
 
 model AgencyUser {
   id       String         @id @default(cuid())
-  email    String
+  email    String         @unique
   name     String
   agencyId String
   role     AgencyUserRole
@@ -103,7 +102,6 @@ model AgencyUser {
   uploadedAssets  ContentAsset[]
 
   @@index([agencyId])
-  @@index([email])
 }
 
 model AgencyMagicLink {
@@ -145,7 +143,7 @@ enum AgencyStatus {
 model Agency {
   id                   String       @id @default(cuid())
   name                 String
-  slug                 String
+  slug                 String       @unique
   status               AgencyStatus @default(PROSPECT)
   retentionRiskScore   Float        @default(0)
 
@@ -158,7 +156,6 @@ model Agency {
   agencyUsers  AgencyUser[]
 
   @@index([status])
-  @@index([slug])
 }
 
 enum ContractTier {
@@ -244,8 +241,8 @@ enum AccountStatus {
 model Account {
   id                String        @id @default(cuid())
   modelId           String
-  handle            String
-  platformAccountId String?
+  handle            String        @unique
+  platformAccountId String?       @unique
   status            AccountStatus @default(PROSPECT)
   statusChangedAt   DateTime      @default(now())
   followerCount     Int           @default(0)
@@ -273,8 +270,6 @@ model Account {
   @@index([modelId])
   @@index([status])
   @@index([phoneDeviceId])
-  @@index([handle])
-  @@index([platformAccountId])
 }
 
 enum PhoneDeviceStatus {
@@ -522,7 +517,7 @@ model Post {
   assetIds          String[]   @default([])
   scheduledFor      DateTime?
   postedAt          DateTime?
-  platformPostId    String?
+  platformPostId    String?    @unique
   generatedByUserId String?
   generationMeta    Json       @default("{}")
   approvedByUserId  String?
@@ -544,7 +539,6 @@ model Post {
   @@index([accountId, status])
   @@index([scheduledFor])
   @@index([status])
-  @@index([platformPostId])
 }
 
 enum ReplyStatus {

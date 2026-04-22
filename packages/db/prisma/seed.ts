@@ -38,11 +38,15 @@ async function main(): Promise<void> {
   for (const u of opsUsers) {
     await prisma.user.upsert({
       where: { email: u.email },
+      // If a previously-seeded user was soft-deleted, reset deletedAt so the
+      // seed is truly idempotent. Partial unique on User.email means a
+      // create-branch fallback would also work, but update is cheaper.
       update: {
         name: u.name,
         role: u.role,
         status: UserStatus.ACTIVE,
         passwordHash,
+        deletedAt: null,
       },
       create: {
         email: u.email,
@@ -56,7 +60,7 @@ async function main(): Promise<void> {
 
   const agency = await prisma.agency.upsert({
     where: { slug: 'test-agency' },
-    update: { name: 'Test Agency', status: AgencyStatus.ACTIVE },
+    update: { name: 'Test Agency', status: AgencyStatus.ACTIVE, deletedAt: null },
     create: { name: 'Test Agency', slug: 'test-agency', status: AgencyStatus.ACTIVE },
   });
 
@@ -66,6 +70,7 @@ async function main(): Promise<void> {
       name: 'Agency Owner',
       agencyId: agency.id,
       role: AgencyUserRole.AGENCY_OWNER,
+      deletedAt: null,
     },
     create: {
       email: 'agency@test.local',
