@@ -2,6 +2,32 @@
 
 Per spec §9 step 8 — every shipped feature logged here.
 
+## Unreleased — Soft-delete-aware uniqueness (2026-04-22)
+
+Fixes two related onboarding bugs by moving DB-level unique constraints
+to partial indexes (WHERE deletedAt IS NULL) while keeping Prisma's
+schema view declarative (`@unique`). Callers unchanged; soft-deleted
+rows no longer squat on email/slug/handle namespaces.
+
+DriveSource replaces soft-delete with a `status` enum (ACTIVE |
+DISCONNECTED) so reconnect is a row-level state transition —
+DriveSync history and ContentAssets stay attached across reconnects.
+New `upsertDriveSource()` helper shared by the model-detail connect
+form and onboard step 4 reactivates a DISCONNECTED row on reconnect.
+
+New UI on the model detail page:
+- Remove-account button on each row (soft-deletes + frees the handle).
+- Danger-zone card with retype-display-name confirm (soft-deletes the
+  model, cascades to accounts, flips drive sources to DISCONNECTED).
+
+Vitest wired up in apps/ops; 8 regression tests cover the
+connect→disconnect→reconnect loop and the softDeleteAccount happy
+path.
+
+Partial unique indexes apply to: User.email, AgencyUser.email,
+Agency.slug, Account.handle, Account.platformAccountId,
+Post.platformPostId. Migration `20260422010000_soft_delete_partial_uniques`.
+
 ## Unreleased — Build A: guided model onboarding wizard (2026-04-22)
 
 First operator surface from the operational-model doc (Surface 1: Onboarding).
