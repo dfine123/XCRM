@@ -25,15 +25,16 @@ export function ThumbnailCard({
     id: string;
     type: AssetType;
     tagStatus: AssetTagStatus;
-    thumbnailUrl: string | null;
-    storageUrl: string;
     autoTags: unknown;
     manualTags: string[];
     useCount: number;
   };
 }) {
   const tags = (asset.autoTags ?? {}) as AutoTags;
-  const src = asset.thumbnailUrl || asset.storageUrl;
+  // Always go through our proxy — the stored Drive URLs are gated by
+  // the service account's Google session and won't load in the
+  // operator's browser. See /api/drive/file/[id].
+  const src = `/api/drive/file/${asset.id}`;
 
   return (
     <Link

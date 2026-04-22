@@ -66,7 +66,10 @@ export default async function AssetDetailPage({ params }: { params: { id: string
   if (!asset) notFound();
 
   const autoTags = (asset.autoTags ?? {}) as AutoTags;
-  const src = asset.thumbnailUrl || asset.storageUrl;
+  // Always go through our proxy — the stored Drive URLs are gated by
+  // the service account's Google session and won't load in the
+  // operator's browser. See /api/drive/file/[id].
+  const src = `/api/drive/file/${asset.id}`;
   const isDeleted = asset.deletedAt !== null;
 
   return (
@@ -109,7 +112,7 @@ export default async function AssetDetailPage({ params }: { params: { id: string
               {asset.type === 'VIDEO' ? (
                 // eslint-disable-next-line jsx-a11y/media-has-caption
                 <video
-                  src={asset.storageUrl}
+                  src={src}
                   controls
                   className="h-full w-full object-contain"
                 />

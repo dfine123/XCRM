@@ -69,8 +69,6 @@ export default async function ContentPage({
         id: true,
         type: true,
         tagStatus: true,
-        thumbnailUrl: true,
-        storageUrl: true,
         autoTags: true,
         manualTags: true,
         useCount: true,
