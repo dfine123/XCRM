@@ -285,3 +285,36 @@ Explicit anti-goals, to prevent dashboard-instinct drift:
 If a proposed screen doesn't serve onboarding, roster-at-a-glance, or
 model-detail drill-down, it probably does not belong in the operator
 surface.
+
+## Off-spec carryovers
+
+Between Builds A and B the build-out acquired features the build sequence
+doesn't strictly call for. They are additive (no schema changes) and
+cost nothing to keep in place, but they have not been formally integrated
+into the sequence. Captured here so the drift is owned, not forgotten:
+each item should be re-evaluated when its natural home build lands, at
+which point we decide to use as-is, refactor, or discard.
+
+- **Vision-tagging schema v2.** `packages/ai/src/types.ts` extends
+  `TagResult` with `mood`, `lighting`, `colorPalette`, `dominantSubject`,
+  `composition`, `textInImage`, `faceCount`, `caption`.
+  `packages/shared/src/prompts/asset-tagging.ts` instructs Claude to
+  populate them. **Revisit at Build D.** Generation is what decides
+  what shape the tag metadata needs to take; we picked the shape
+  without a driving query to pin it down. Cut, refactor, or adopt
+  once the gen loop writes its first asset-picker prompt.
+
+- **Asset novelty score.** `apps/ops/src/lib/asset-novelty.ts` is a
+  pure-function 0..1 score derived from `useCount` + `lastUsedAt`.
+  Rendered on the asset detail page, not wired into any picker.
+  **Revisit at Build D** alongside the vision schema.
+
+- **Asset-detail "Signals" + "Caption" cards.** Render the above two.
+  UI-only; cheap to strip if Build D supersedes them.
+
+Items not counted as drift even though they landed mid-flight: the Drive
+file proxy route (`apps/ops/src/app/api/drive/file/[id]/route.ts`), the
+inline-Drive-sync refactor, the Dockerfile and env fixes, and the
+soft-delete-aware uniqueness work with its remove-account/remove-model
+UI. Those were either direct user asks or necessary unblockers.
+
