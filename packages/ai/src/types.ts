@@ -38,3 +38,17 @@ export const TagResult = z.object({
 });
 
 export type TagResultT = z.infer<typeof TagResult>;
+
+/**
+ * Structured output contract for `draftPost()` (Build D). The generator
+ * MUST return exactly these four fields. `assetId` is validated against
+ * the input pool by the caller, not the schema — zod can't see the pool.
+ */
+export const DraftResult = z.object({
+  copy: z.string().min(1).max(280),
+  assetId: z.string().min(1),
+  confidence: z.number().min(0).max(1),
+  reasoning: z.string().min(1).max(1000),
+});
+
+export type DraftResultT = z.infer<typeof DraftResult>;
