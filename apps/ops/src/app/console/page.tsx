@@ -1,62 +1,78 @@
-import { OPS_HUES, PageHeader, StatCard } from '@xcrm/ui';
+import Link from 'next/link';
+import { Button, EmptyState, OPS_HUES, PageHeader } from '@xcrm/ui';
+import { requireUser } from '@/lib/session';
+import { getRosterModels } from './_loaders/roster';
+import { ActiveNotesStrip } from './_components/active-notes-strip';
+import { RosterRowView } from './_components/roster-row';
 
-export default function Dashboard() {
+/**
+ * Surface 2 — Roster. Default operator home after login.
+ *
+ * One row per model, sorted red → yellow → green (worst-signal decides
+ * the group; alphabetical within). A healthy roster looks like nothing:
+ * all green pills, no red. That is the success state.
+ *
+ * Everything on this page comes from `getRosterModels()` — no
+ * per-model fetches in individual components.
+ */
+export default async function RosterPage() {
+  await requireUser();
+  const rows = await getRosterModels();
+
+  const counts = {
+    red: rows.filter((r) => r.severity === 3).length,
+    yellow: rows.filter((r) => r.severity === 2).length,
+    total: rows.length,
+  };
+
   return (
     <>
       <PageHeader
-        kicker="OVERVIEW"
-        title="Dashboard"
-        subtitle="Phase 0 shell. Feature dashboards land in Phase 1 once the scheduler and insight pipeline are online."
+        kicker="ROSTER"
+        title="Models"
+        subtitle={
+          counts.total === 0
+            ? 'No models yet. Onboard one to start.'
+            : counts.red + counts.yellow === 0
+              ? 'All signals green — nothing needs attention.'
+              : `${counts.red} red · ${counts.yellow} yellow · ${counts.total} total.`
+        }
+        hue={OPS_HUES.models}
+        icon="Md"
+        actions={
+          <Link href="/console/onboard">
+            <Button size="sm" hue={OPS_HUES.models}>
+              Onboard model
+            </Button>
+          </Link>
+        }
       />
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <StatCard
-          label="Accounts"
-          value="—"
-          icon="Ac"
-          hue={OPS_HUES.accounts}
-          caption="managed handles"
-        />
-        <StatCard
-          label="Posts today"
-          value="—"
-          icon="Co"
-          hue={OPS_HUES.content}
-          caption="across all accounts"
-        />
-        <StatCard label="Active VAs" value="—" icon="VA" hue={OPS_HUES.vas} caption="currently online" />
-        <StatCard
-          label="Runway at risk"
-          value="—"
-          icon="In"
-          hue={OPS_HUES.insights}
-          caption="agencies below 7d"
-        />
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-line bg-surface/40 px-4 py-3">
+        <ActiveNotesStrip count={0} />
       </div>
 
-      <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <StatCard
-          label="Open escalations"
-          value="—"
-          icon="Ag"
-          hue={OPS_HUES.agencies}
-          caption="awaiting partner review"
+      {rows.length === 0 ? (
+        <EmptyState
+          hue={OPS_HUES.models}
+          icon="Md"
+          title="No models yet"
+          description="The roster shows one row per model with live signal lights. Onboard a model to populate it."
+          actions={
+            <Link href="/console/onboard">
+              <Button size="sm" hue={OPS_HUES.models}>
+                Onboard model
+              </Button>
+            </Link>
+          }
         />
-        <StatCard
-          label="Camps awaiting approval"
-          value="—"
-          icon="Ca"
-          hue={OPS_HUES.camps}
-          caption="auto-activate Sun 20:00 UTC"
-        />
-        <StatCard
-          label="Insight candidates"
-          value="—"
-          icon="In"
-          hue={OPS_HUES.insights}
-          caption="nightly queue"
-        />
-      </div>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {rows.map((row) => (
+            <RosterRowView key={row.id} row={row} />
+          ))}
+        </div>
+      )}
     </>
   );
 }
