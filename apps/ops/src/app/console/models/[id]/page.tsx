@@ -14,31 +14,144 @@ import {
   TR,
   TH,
   TD,
+  type Hue,
 } from '@xcrm/ui';
 import { ACCOUNT_STATUS_HUE } from '@/lib/status-hues';
+import { relativeTime } from '@/lib/relative-time';
 import { ContentSourcesCard } from './_components/content-sources-card';
 import { RemoveAccountButton } from './_components/remove-account-button';
 import { RemoveModelCard } from './_components/remove-model-card';
+import { AnchorNav, type AnchorItem } from './_components/anchor-nav';
+import { SectionBlock } from './_components/section-block';
 
-export default async function ModelDetailPage({ params }: { params: { id: string } }) {
+const ANCHOR_ITEMS: AnchorItem[] = [
+  { id: 'overview', label: 'Overview', hint: 'identity + accounts' },
+  { id: 'content', label: 'Content', hint: 'drive sources + library' },
+  { id: 'scheduled', label: 'Scheduled', hint: 'posts (Build D)' },
+  { id: 'notes', label: 'Context notes', hint: 'active steering (Build C)' },
+  { id: 'settings', label: 'Settings' },
+  { id: 'audit', label: 'Audit' },
+];
+
+const AUDIT_HUE: Record<string, Hue> = {
+  STATUS_TRANSITION: 25,
+  ASSET_DELETE: 25,
+  ASSET_RESTORE: 135,
+  ASSET_MANUAL_TAG_EDIT: 210,
+  ASSET_REVIEW_OVERRIDE: 320,
+  SYNC_SUCCEEDED: 135,
+  SYNC_FAILED: 25,
+};
+
+type AuditEntry = {
+  key: string;
+  kind: string;
+  label: string;
+  occurredAt: Date;
+  actor: string | null;
+  detail: string;
+};
+
+export default async function ModelDetailPage({
+  params,
+}: {
+  params: { id: string };
+}) {
   const model = await prisma.model.findFirst({
     where: { id: params.id, deletedAt: null },
     include: {
       agency: { select: { id: true, name: true, slug: true } },
       accounts: {
         where: { deletedAt: null },
-        include: { phoneDevice: { select: { label: true } } },
         orderBy: { handle: 'asc' },
+        include: {
+          phoneDevice: { select: { label: true } },
+          statusTransitions: {
+            orderBy: { occurredAt: 'desc' },
+            take: 10,
+            include: {
+              actor: { select: { id: true, name: true, email: true } },
+            },
+          },
+        },
       },
-      _count: { select: { contentAssets: true } },
+      driveSources: {
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          folderName: true,
+          status: true,
+          syncs: {
+            orderBy: { startedAt: 'desc' },
+            take: 5,
+            select: {
+              id: true,
+              status: true,
+              finishedAt: true,
+              startedAt: true,
+              filesIngested: true,
+              error: true,
+            },
+          },
+        },
+      },
+      contentAssets: {
+        where: { deletedAt: null },
+        orderBy: { uploadedAt: 'desc' },
+        take: 6,
+        select: {
+          id: true,
+          type: true,
+          tagStatus: true,
+        },
+      },
+      _count: { select: { contentAssets: { where: { deletedAt: null } } } },
     },
   });
   if (!model) notFound();
 
-  const hardRules = Array.isArray(model.hardRules) ? (model.hardRules as string[]) : [];
+  const hardRules = Array.isArray(model.hardRules)
+    ? (model.hardRules as string[])
+    : [];
   const softPrefs = Array.isArray(model.softPreferences)
     ? (model.softPreferences as string[])
     : [];
+
+  // Roll up audit events from StatusTransition + DriveSync across all
+  // sources + accounts, newest first. AssetAuditEvent is scoped to
+  // assets; pulling per-asset would be expensive and we already show
+  // it on the asset detail page, so we omit it here intentionally and
+  // link out to the library for that trail.
+  const auditEntries: AuditEntry[] = [];
+  for (const a of model.accounts) {
+    for (const t of a.statusTransitions) {
+      auditEntries.push({
+        key: `st-${t.id}`,
+        kind: 'STATUS_TRANSITION',
+        label: `@${a.handle} ${t.fromStatus.toLowerCase()} → ${t.toStatus.toLowerCase()}`,
+        occurredAt: t.occurredAt,
+        actor: t.actor?.name ?? t.actor?.email ?? null,
+        detail: t.reason ?? '',
+      });
+    }
+  }
+  for (const ds of model.driveSources) {
+    for (const s of ds.syncs) {
+      auditEntries.push({
+        key: `sync-${s.id}`,
+        kind: s.status === 'FAILED' ? 'SYNC_FAILED' : 'SYNC_SUCCEEDED',
+        label: `${ds.folderName} · ${s.status.toLowerCase()}`,
+        occurredAt: s.finishedAt ?? s.startedAt,
+        actor: null,
+        detail:
+          s.status === 'FAILED'
+            ? s.error ?? 'sync failed'
+            : `${s.filesIngested} file${s.filesIngested === 1 ? '' : 's'} ingested`,
+      });
+    }
+  }
+  auditEntries.sort((a, b) => b.occurredAt.getTime() - a.occurredAt.getTime());
+  const recentAudit = auditEntries.slice(0, 20);
 
   return (
     <>
@@ -74,123 +187,268 @@ export default async function ModelDetailPage({ params }: { params: { id: string
         }
       />
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_320px]">
-        <section className="flex flex-col gap-4">
-          <h2 className="text-[11px] font-semibold uppercase tracking-[0.2em] text-fg-muted">
-            Accounts
-          </h2>
-          {model.accounts.length === 0 ? (
-            <EmptyState
-              hue={OPS_HUES.accounts}
-              icon="Ac"
-              title="No accounts for this model"
-              description="Attach an X handle so content can flow."
-              actions={
-                <Link href={`/console/accounts/new?modelId=${model.id}`}>
-                  <Button size="sm" hue={OPS_HUES.accounts}>
-                    Add account
-                  </Button>
-                </Link>
-              }
-            />
-          ) : (
-            <Table>
-              <THead>
-                <TR>
-                  <TH>Handle</TH>
-                  <TH>Status</TH>
-                  <TH>Device</TH>
-                  <TH className="text-right tabular-nums">Followers</TH>
-                  <TH className="w-24 text-right">&nbsp;</TH>
-                </TR>
-              </THead>
-              <TBody>
-                {model.accounts.map((a) => (
-                  <TR key={a.id}>
-                    <TD className="font-mono text-fg">@{a.handle}</TD>
-                    <TD>
-                      <Tag hue={ACCOUNT_STATUS_HUE[a.status]} size="sm">
-                        {a.status.toLowerCase().replace(/_/g, ' ')}
-                      </Tag>
-                    </TD>
-                    <TD className="text-fg-dim">
-                      {a.phoneDevice ? a.phoneDevice.label : <span className="text-fg-faint">—</span>}
-                    </TD>
-                    <TD className="text-right tabular-nums">
-                      {a.followerCount.toLocaleString()}
-                    </TD>
-                    <TD className="text-right">
-                      <div className="inline-flex items-center gap-2">
-                        <Link
-                          href={`/console/accounts/${a.id}`}
-                          className="text-[13px] text-fg-dim hover:text-fg"
-                        >
-                          Open →
-                        </Link>
-                        <RemoveAccountButton
-                          accountId={a.id}
-                          handle={a.handle}
-                          modelId={model.id}
-                        />
-                      </div>
-                    </TD>
+      <div className="grid grid-cols-1 gap-8 lg:grid-cols-[200px_minmax(0,1fr)]">
+        <AnchorNav items={ANCHOR_ITEMS} />
+
+        <div className="flex flex-col gap-10">
+          {/* --- Overview --------------------------------------------------- */}
+          <SectionBlock
+            id="overview"
+            title="Overview"
+            subtitle={`last activity ${relativeTime(model.updatedAt)}`}
+          >
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+              <Card className="p-4">
+                <h3 className="text-[11px] font-semibold uppercase tracking-[0.2em] text-fg-muted">
+                  Voice / tone
+                </h3>
+                <p className="mt-2 whitespace-pre-wrap text-[13px] leading-relaxed text-fg-dim">
+                  {model.voiceToneNotes || (
+                    <span className="text-fg-faint">—</span>
+                  )}
+                </p>
+              </Card>
+              <Card className="p-4">
+                <h3 className="text-[11px] font-semibold uppercase tracking-[0.2em] text-fg-muted">
+                  Hard rules
+                </h3>
+                {hardRules.length === 0 ? (
+                  <p className="mt-2 text-[13px] text-fg-faint">—</p>
+                ) : (
+                  <ul className="mt-2 flex flex-col gap-1 text-[13px] text-fg">
+                    {hardRules.map((r) => (
+                      <li key={r} className="flex items-start gap-2">
+                        <span className="text-destructive">•</span>
+                        <span>{r}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </Card>
+              <Card className="p-4">
+                <h3 className="text-[11px] font-semibold uppercase tracking-[0.2em] text-fg-muted">
+                  Soft preferences
+                </h3>
+                {softPrefs.length === 0 ? (
+                  <p className="mt-2 text-[13px] text-fg-faint">—</p>
+                ) : (
+                  <ul className="mt-2 flex flex-col gap-1 text-[13px] text-fg-dim">
+                    {softPrefs.map((p) => (
+                      <li key={p} className="flex items-start gap-2">
+                        <span className="text-fg-muted">◦</span>
+                        <span>{p}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </Card>
+            </div>
+
+            {model.accounts.length === 0 ? (
+              <EmptyState
+                hue={OPS_HUES.accounts}
+                icon="Ac"
+                title="No accounts for this model"
+                description="Attach an X handle so content can flow."
+                actions={
+                  <Link href={`/console/accounts/new?modelId=${model.id}`}>
+                    <Button size="sm" hue={OPS_HUES.accounts}>
+                      Add account
+                    </Button>
+                  </Link>
+                }
+              />
+            ) : (
+              <Table>
+                <THead>
+                  <TR>
+                    <TH>Handle</TH>
+                    <TH>Status</TH>
+                    <TH>Device</TH>
+                    <TH className="text-right tabular-nums">Followers</TH>
+                    <TH className="w-24 text-right">&nbsp;</TH>
                   </TR>
-                ))}
-              </TBody>
-            </Table>
-          )}
-
-          <ContentSourcesCard modelId={model.id} />
-        </section>
-
-        <aside className="flex flex-col gap-4">
-          <Card className="p-5">
-            <h3 className="text-[11px] font-semibold uppercase tracking-[0.2em] text-fg-muted">
-              Voice / tone
-            </h3>
-            <p className="mt-3 whitespace-pre-wrap text-[13px] leading-relaxed text-fg-dim">
-              {model.voiceToneNotes || <span className="text-fg-faint">—</span>}
-            </p>
-          </Card>
-
-          <Card className="p-5">
-            <h3 className="text-[11px] font-semibold uppercase tracking-[0.2em] text-fg-muted">
-              Hard rules
-            </h3>
-            {hardRules.length === 0 ? (
-              <p className="mt-3 text-[13px] text-fg-faint">—</p>
-            ) : (
-              <ul className="mt-3 flex flex-col gap-1.5 text-[13px] text-fg">
-                {hardRules.map((r) => (
-                  <li key={r} className="flex items-start gap-2">
-                    <span className="text-destructive">•</span>
-                    <span>{r}</span>
-                  </li>
-                ))}
-              </ul>
+                </THead>
+                <TBody>
+                  {model.accounts.map((a) => (
+                    <TR key={a.id}>
+                      <TD className="font-mono text-fg">@{a.handle}</TD>
+                      <TD>
+                        <Tag hue={ACCOUNT_STATUS_HUE[a.status]} size="sm">
+                          {a.status.toLowerCase().replace(/_/g, ' ')}
+                        </Tag>
+                      </TD>
+                      <TD className="text-fg-dim">
+                        {a.phoneDevice ? (
+                          a.phoneDevice.label
+                        ) : (
+                          <span className="text-fg-faint">—</span>
+                        )}
+                      </TD>
+                      <TD className="text-right tabular-nums">
+                        {a.followerCount.toLocaleString()}
+                      </TD>
+                      <TD className="text-right">
+                        <div className="inline-flex items-center gap-2">
+                          <Link
+                            href={`/console/accounts/${a.id}`}
+                            className="text-[13px] text-fg-dim hover:text-fg"
+                          >
+                            Open →
+                          </Link>
+                          <RemoveAccountButton
+                            accountId={a.id}
+                            handle={a.handle}
+                            modelId={model.id}
+                          />
+                        </div>
+                      </TD>
+                    </TR>
+                  ))}
+                </TBody>
+              </Table>
             )}
-          </Card>
+          </SectionBlock>
 
-          <Card className="p-5">
-            <h3 className="text-[11px] font-semibold uppercase tracking-[0.2em] text-fg-muted">
-              Soft preferences
-            </h3>
-            {softPrefs.length === 0 ? (
-              <p className="mt-3 text-[13px] text-fg-faint">—</p>
+          {/* --- Content ---------------------------------------------------- */}
+          <SectionBlock
+            id="content"
+            title="Content"
+            subtitle={`${model._count.contentAssets} asset${model._count.contentAssets === 1 ? '' : 's'} in library`}
+          >
+            <ContentSourcesCard modelId={model.id} />
+
+            {model._count.contentAssets > 0 ? (
+              <Card className="p-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-[11px] font-semibold uppercase tracking-[0.2em] text-fg-muted">
+                    Recent assets
+                  </h3>
+                  <Link
+                    href={`/console/content?modelId=${model.id}`}
+                    className="text-[12px] text-fg-dim hover:text-fg"
+                  >
+                    Browse library →
+                  </Link>
+                </div>
+                <div className="mt-3 grid grid-cols-3 gap-2 md:grid-cols-6">
+                  {model.contentAssets.map((a) => (
+                    <Link
+                      key={a.id}
+                      href={`/console/content/${a.id}`}
+                      className="group relative aspect-square overflow-hidden rounded-md border border-line bg-base"
+                    >
+                      {a.type === 'VIDEO' ? (
+                        <div className="flex h-full w-full items-center justify-center text-[10px] uppercase tracking-[0.2em] text-fg-faint">
+                          video
+                        </div>
+                      ) : (
+                        /* eslint-disable-next-line @next/next/no-img-element */
+                        <img
+                          src={`/api/drive/file/${a.id}`}
+                          alt=""
+                          loading="lazy"
+                          className="h-full w-full object-cover transition group-hover:scale-[1.02]"
+                        />
+                      )}
+                    </Link>
+                  ))}
+                </div>
+              </Card>
+            ) : null}
+          </SectionBlock>
+
+          {/* --- Scheduled / recent posts (stub) ---------------------------- */}
+          <SectionBlock
+            id="scheduled"
+            title="Scheduled & recent posts"
+            subtitle="Build D"
+          >
+            <Card className="p-5">
+              <p className="text-[13px] leading-relaxed text-fg-dim">
+                The generation loop is not yet wired up. Once Build D
+                lands, this section surfaces posts scheduled for this
+                model&apos;s accounts and recent posted results with their
+                engagement.
+              </p>
+            </Card>
+          </SectionBlock>
+
+          {/* --- Context notes (stub) -------------------------------------- */}
+          <SectionBlock id="notes" title="Context notes" subtitle="Build C">
+            <Card className="p-5">
+              <p className="text-[13px] leading-relaxed text-fg-dim">
+                No active notes. The note overlay (hotkey{' '}
+                <kbd className="rounded border border-line bg-surface/40 px-1 font-mono text-[11px] text-fg-dim">
+                  N
+                </kbd>
+                ) arrives in Build C — any note scoped to this model will
+                appear here when created.
+              </p>
+            </Card>
+          </SectionBlock>
+
+          {/* --- Settings --------------------------------------------------- */}
+          <SectionBlock id="settings" title="Settings">
+            <Card className="p-5">
+              <h3 className="text-[11px] font-semibold uppercase tracking-[0.2em] text-fg-muted">
+                Editable fields
+              </h3>
+              <p className="mt-2 text-[13px] text-fg-dim">
+                Voice/tone, archetype, hard rules and soft preferences are
+                currently read-only. Edits land in a follow-up build — for
+                now, remove &amp; re-onboard if you need to change them.
+              </p>
+            </Card>
+
+            <RemoveModelCard
+              modelId={model.id}
+              displayName={model.displayName}
+            />
+          </SectionBlock>
+
+          {/* --- Audit ------------------------------------------------------ */}
+          <SectionBlock
+            id="audit"
+            title="Audit"
+            subtitle={
+              recentAudit.length > 0
+                ? `last ${recentAudit.length}`
+                : undefined
+            }
+          >
+            {recentAudit.length === 0 ? (
+              <Card className="p-5">
+                <p className="text-[13px] text-fg-faint">
+                  No audit events yet. Account status changes and Drive sync
+                  results surface here as they happen.
+                </p>
+              </Card>
             ) : (
-              <ul className="mt-3 flex flex-col gap-1.5 text-[13px] text-fg-dim">
-                {softPrefs.map((p) => (
-                  <li key={p} className="flex items-start gap-2">
-                    <span className="text-fg-muted">◦</span>
-                    <span>{p}</span>
-                  </li>
-                ))}
-              </ul>
+              <Card className="p-4">
+                <ul className="flex flex-col divide-y divide-line text-[13px]">
+                  {recentAudit.map((e) => (
+                    <li key={e.key} className="flex flex-wrap items-center gap-2 py-2">
+                      <Tag hue={AUDIT_HUE[e.kind] ?? null} size="sm">
+                        {e.kind.toLowerCase().replace(/_/g, ' ')}
+                      </Tag>
+                      <span className="text-fg">{e.label}</span>
+                      {e.detail ? (
+                        <span className="text-fg-dim">· {e.detail}</span>
+                      ) : null}
+                      {e.actor ? (
+                        <span className="text-fg-faint">· by {e.actor}</span>
+                      ) : null}
+                      <span className="ml-auto text-fg-faint">
+                        {relativeTime(e.occurredAt)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </Card>
             )}
-          </Card>
-
-          <RemoveModelCard modelId={model.id} displayName={model.displayName} />
-        </aside>
+          </SectionBlock>
+        </div>
       </div>
     </>
   );

@@ -2,6 +2,45 @@
 
 Per spec §9 step 8 — every shipped feature logged here.
 
+## Unreleased — Build B: Roster + Model detail reshape (2026-04-23)
+
+First pass at the three-surface operator model from
+`/docs/operational-model.md`. Plan committed ahead of code at
+`/docs/builds/build-b-plan.md`.
+
+- **Surface 2 — Roster** (`apps/ops/src/app/console/page.tsx`)
+  replaces the Phase-0 `StatCard` dashboard. One row per non-deleted
+  model with signal-light pills, sorted red → yellow → green (worst
+  signal wins the group, alphabetical within). Healthy roster shows
+  all green = "nothing needs attention".
+  - `_loaders/roster.ts` — single batched query with signal folding.
+  - `_components/signal-light.tsx` — one pill, OKLCH hue per state.
+  - `_components/roster-row.tsx` — server component.
+  - `_components/active-notes-strip.tsx` — stubbed at 0 pending Build C.
+- **Surface 3 — Model detail** (`apps/ops/src/app/console/models/[id]/page.tsx`)
+  reshaped into six anchor-navigable blocks (Overview / Content /
+  Scheduled / Context notes / Settings / Audit) with a sticky
+  `<AnchorNav>` left-rail. Single URL, no tabs, no sub-routes. Active
+  section highlights as you scroll via `IntersectionObserver`.
+- **Signal lights** — pure logic in `apps/ops/src/lib/signal-lights.ts`,
+  25 tests covering every threshold + the red+yellow mixed-severity
+  case. Sort comparator tested with full red/yellow/green fixtures.
+- **Incomplete-onboarding signal** — yellow pill with "Resume
+  onboarding" label; clicking the row routes back to
+  `/console/onboard?modelId=X` instead of the detail page.
+
+Real signals rendered today: failed Drive syncs (24h window + 3-
+consecutive red threshold), quarantined accounts, incomplete
+onboarding. Stubbed pending later builds: content runway (Build D),
+escalated tasks (Build F), review queue depth (Build E).
+
+Explicit anti-goals landed intact: no `N` hotkey wiring, no generation,
+no review queue UI, no VA runner, no engagement ingest, no nav-sidebar
+reshape. The sidebar divergence is logged in `/docs/reality-delta.md`.
+
+No schema changes. No new dependencies.
+
+
 ## Unreleased — Soft-delete-aware uniqueness (2026-04-22)
 
 Fixes two related onboarding bugs by moving DB-level unique constraints
