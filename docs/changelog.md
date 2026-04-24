@@ -2,6 +2,46 @@
 
 Per spec §9 step 8 — every shipped feature logged here.
 
+## Unreleased — Build C: Context note system (2026-04-23)
+
+Per `/docs/operational-model.md` "The context note mechanic". The
+operator's lever for injecting real-world signal into generation.
+Plan + three commits on `claude/build-crm-system-zo5AT`:
+
+- **Backend** (`aa949ad`) — `apps/ops/src/lib/context-notes.ts` defines
+  the scope discriminated union (ALL / ARCHETYPES / ACCOUNTS) + zod
+  schema + `noteAppliesTo()` resolver + `durationToEffectiveUntil()` +
+  `formatScope` / `formatRemainingTime` UI helpers. Covered by 19
+  unit tests. `apps/ops/src/app/console/context-notes/actions.ts`
+  handles create (zod-validated, resolves @handles → IDs server-side)
+  and cancel (flips ACTIVE → CANCELLED, distinct from natural EXPIRED
+  so audit preserves intent). `apps/ops/src/app/api/context-notes/expire/route.ts`
+  is a CRON_SECRET-gated POST that flips ACTIVE rows whose
+  `effectiveUntil` has passed. Registered in `instrumentation.ts`
+  alongside drive-sync, default cadence `*/10 * * * *`.
+- **Create path** (`71e8049`) — `<NoteHotkey>` global listener binds
+  `N` (skips inputs/textareas/selects/contenteditable, doesn't
+  intercept Cmd+N / Ctrl+N / Alt+N). Opens `<NoteOverlay>`, a
+  backdrop-click / ESC-close modal with title, body, scope
+  (All/Archetypes/Accounts), weight slider, duration radio. Mounted
+  once in `apps/ops/src/app/console/layout.tsx`.
+- **Visibility** — `_loaders/active-notes.ts` supplies a single
+  `getActiveNotes()` plus a pure `filterNotesForModel()`.
+  `<ActiveNotesStrip>` on the roster header is now expandable with
+  the live count; clicking it drops down an in-page list.
+  `<NoteListItem>` renders one note (title, weight, scope summary,
+  remaining time, cancel button) — shared between the strip and the
+  model detail `#notes` SectionBlock. `#notes` now shows actual notes
+  that apply to the open model (via `noteAppliesTo`), with empty-state
+  copy when none.
+
+Schema changes: none. The `ContextNote` table shipped in Phase 0 had
+every field we needed.
+
+Explicit anti-goals honoured: no Cmd+K palette (still deferred), no
+note editing (create + cancel only), no generator integration (Build
+D), no archived/expired browsing UI.
+
 ## Unreleased — Build B: Roster + Model detail reshape (2026-04-23)
 
 First pass at the three-surface operator model from

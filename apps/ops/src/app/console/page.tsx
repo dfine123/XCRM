@@ -2,7 +2,9 @@ import Link from 'next/link';
 import { Button, EmptyState, OPS_HUES, PageHeader } from '@xcrm/ui';
 import { requireUser } from '@/lib/session';
 import { getRosterModels } from './_loaders/roster';
+import { getActiveNotes } from './_loaders/active-notes';
 import { ActiveNotesStrip } from './_components/active-notes-strip';
+import { NoteListItem } from './_components/note-list-item';
 import { RosterRowView } from './_components/roster-row';
 
 /**
@@ -17,7 +19,10 @@ import { RosterRowView } from './_components/roster-row';
  */
 export default async function RosterPage() {
   await requireUser();
-  const rows = await getRosterModels();
+  const [rows, activeNotes] = await Promise.all([
+    getRosterModels(),
+    getActiveNotes(),
+  ]);
 
   const counts = {
     red: rows.filter((r) => r.severity === 3).length,
@@ -48,8 +53,13 @@ export default async function RosterPage() {
         }
       />
 
-      <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-line bg-surface/40 px-4 py-3">
-        <ActiveNotesStrip count={0} />
+      <div className="mb-5 flex flex-col gap-3 rounded-lg border border-line bg-surface/40 px-4 py-3">
+        <ActiveNotesStrip
+          count={activeNotes.length}
+          expanded={activeNotes.map((n) => (
+            <NoteListItem key={n.id} note={n} />
+          ))}
+        />
       </div>
 
       {rows.length === 0 ? (

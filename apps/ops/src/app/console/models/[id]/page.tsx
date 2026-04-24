@@ -18,6 +18,11 @@ import {
 } from '@xcrm/ui';
 import { ACCOUNT_STATUS_HUE } from '@/lib/status-hues';
 import { relativeTime } from '@/lib/relative-time';
+import {
+  getActiveNotes,
+  filterNotesForModel,
+} from '@/app/console/_loaders/active-notes';
+import { NoteListItem } from '@/app/console/_components/note-list-item';
 import { ContentSourcesCard } from './_components/content-sources-card';
 import { RemoveAccountButton } from './_components/remove-account-button';
 import { RemoveModelCard } from './_components/remove-model-card';
@@ -109,6 +114,12 @@ export default async function ModelDetailPage({
     },
   });
   if (!model) notFound();
+
+  const activeNotes = await getActiveNotes();
+  const notesForModel = filterNotesForModel(activeNotes, {
+    archetype: model.archetype,
+    accountIds: model.accounts.map((a) => a.id),
+  });
 
   const hardRules = Array.isArray(model.hardRules)
     ? (model.hardRules as string[])
@@ -374,18 +385,34 @@ export default async function ModelDetailPage({
             </Card>
           </SectionBlock>
 
-          {/* --- Context notes (stub) -------------------------------------- */}
-          <SectionBlock id="notes" title="Context notes" subtitle="Build C">
-            <Card className="p-5">
-              <p className="text-[13px] leading-relaxed text-fg-dim">
-                No active notes. The note overlay (hotkey{' '}
-                <kbd className="rounded border border-line bg-surface/40 px-1 font-mono text-[11px] text-fg-dim">
-                  N
-                </kbd>
-                ) arrives in Build C — any note scoped to this model will
-                appear here when created.
-              </p>
-            </Card>
+          {/* --- Context notes --------------------------------------------- */}
+          <SectionBlock
+            id="notes"
+            title="Context notes"
+            subtitle={
+              notesForModel.length > 0
+                ? `${notesForModel.length} affecting this model`
+                : undefined
+            }
+          >
+            {notesForModel.length === 0 ? (
+              <Card className="p-5">
+                <p className="text-[13px] leading-relaxed text-fg-dim">
+                  No active notes apply to this model. Press{' '}
+                  <kbd className="rounded border border-line bg-surface/40 px-1 font-mono text-[11px] text-fg-dim">
+                    N
+                  </kbd>{' '}
+                  to create one — scope it to this archetype or these
+                  accounts and it lands here.
+                </p>
+              </Card>
+            ) : (
+              <ul className="flex flex-col gap-2">
+                {notesForModel.map((n) => (
+                  <NoteListItem key={n.id} note={n} />
+                ))}
+              </ul>
+            )}
           </SectionBlock>
 
           {/* --- Settings --------------------------------------------------- */}
