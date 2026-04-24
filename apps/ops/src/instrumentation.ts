@@ -74,13 +74,16 @@ export async function register() {
     return;
   }
 
-  let running = false;
+  // -------------------------------------------------------------------------
+  // drive-sync cron
+  // -------------------------------------------------------------------------
+  let driveRunning = false;
   cron.schedule(expr, async () => {
-    if (running) {
-      console.log('[scheduler] tick skipped — previous run still in flight');
+    if (driveRunning) {
+      console.log('[scheduler] drive tick skipped — previous run still in flight');
       return;
     }
-    running = true;
+    driveRunning = true;
     const started = Date.now();
     try {
       const res = await fetch(target, {
@@ -93,23 +96,75 @@ export async function register() {
       };
       if (!res.ok) {
         console.error(
-          `[scheduler] tick HTTP ${res.status} in ${Date.now() - started}ms:`,
+          `[scheduler] drive tick HTTP ${res.status} in ${Date.now() - started}ms:`,
           body.error ?? '(no body)',
         );
       } else {
         console.log(
-          `[scheduler] tick ok — sourcesRun=${body.sourcesRun ?? 0} in ${Date.now() - started}ms`,
+          `[scheduler] drive tick ok — sourcesRun=${body.sourcesRun ?? 0} in ${Date.now() - started}ms`,
         );
       }
     } catch (err) {
       console.error(
-        '[scheduler] tick fetch failed:',
+        '[scheduler] drive tick fetch failed:',
         err instanceof Error ? err.message : String(err),
       );
     } finally {
-      running = false;
+      driveRunning = false;
     }
   });
+
+  // -------------------------------------------------------------------------
+  // context-notes expiration cron
+  // -------------------------------------------------------------------------
+  const expireExpr =
+    process.env.CONTEXT_NOTES_EXPIRE_CRON || '*/10 * * * *';
+  const expireTarget = `${baseUrl}/api/context-notes/expire`;
+  if (!cron.validate(expireExpr)) {
+    console.error(
+      `[instrumentation] invalid CONTEXT_NOTES_EXPIRE_CRON "${expireExpr}" — context-notes cron NOT started.`,
+    );
+  } else {
+    let expireRunning = false;
+    cron.schedule(expireExpr, async () => {
+      if (expireRunning) {
+        console.log('[scheduler] expire tick skipped — previous run still in flight');
+        return;
+      }
+      expireRunning = true;
+      const started = Date.now();
+      try {
+        const res = await fetch(expireTarget, {
+          method: 'POST',
+          headers: { 'x-cron-secret': secret },
+        });
+        const body = (await res.json().catch(() => ({}))) as {
+          expired?: number;
+          error?: string;
+        };
+        if (!res.ok) {
+          console.error(
+            `[scheduler] expire tick HTTP ${res.status} in ${Date.now() - started}ms:`,
+            body.error ?? '(no body)',
+          );
+        } else if ((body.expired ?? 0) > 0) {
+          console.log(
+            `[scheduler] expire tick ok — expired=${body.expired} in ${Date.now() - started}ms`,
+          );
+        }
+      } catch (err) {
+        console.error(
+          '[scheduler] expire tick fetch failed:',
+          err instanceof Error ? err.message : String(err),
+        );
+      } finally {
+        expireRunning = false;
+      }
+    });
+    console.log(
+      `[instrumentation] context-notes expire cron registered with expression "${expireExpr}" → ${expireTarget}`,
+    );
+  }
 
   registered = true;
   console.log(
