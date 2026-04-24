@@ -112,9 +112,13 @@ Per row, compute via helpers in `lib/signal-lights.ts`:
 `lastActivity` = `max(model.updatedAt, max(accounts.updatedAt))`.
 
 After computing per-model, sort:
-  1. any `RED` → first
-  2. else any `YELLOW` → second
-  3. else alphabetical by `displayName`
+  1. **Any `RED`** → red group, alphabetical by `displayName` within.
+  2. Else **any `YELLOW`** (and no red) → yellow group, alphabetical within.
+  3. Else **green / all-stub** → green group, alphabetical within.
+
+A model with both red and yellow signals belongs in the red group —
+severity of the *worst* signal decides the group, not the count of
+signals. Documented as fixture cases in `signal-lights.test.ts`.
 
 ### Model-detail loader
 
@@ -209,10 +213,16 @@ the correct step via `computeResumeStep()` (already shipped in A).
 - `apps/ops/src/lib/signal-lights.test.ts` — all threshold boundaries:
   runway < 3 / 3.0 / 6.9 / 7.0 / > 7; escalated 0 / 1 / 2 / 3 / 4;
   failed syncs 0 / 1 / 2 / 3-consecutive; quarantined 0 / 1+;
-  onboarding null/not-null.
+  onboarding null/not-null. Plus explicit **sort-order fixture**
+  covering:
+  - `{ red+yellow, red-only, yellow-only, green-only }` → verifies
+    mixed red+yellow lands in the red group, not split; verifies
+    alphabetical-within-group ordering (two red rows with names "B"
+    and "A" sort A before B).
 - Sort-order test for `getRosterModels` in
   `apps/ops/src/app/console/_loaders/roster.test.ts` with a small
-  fixture array (no DB); verifies red-before-yellow-before-green.
+  fixture array (no DB); verifies red-before-yellow-before-green and
+  that worst-signal decides the group.
 - No component/UI tests — same bar as prior builds.
 
 ## Anti-goals — explicitly NOT in B
