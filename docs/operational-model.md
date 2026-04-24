@@ -295,22 +295,20 @@ into the sequence. Captured here so the drift is owned, not forgotten:
 each item should be re-evaluated when its natural home build lands, at
 which point we decide to use as-is, refactor, or discard.
 
-- **Vision-tagging schema v2.** `packages/ai/src/types.ts` extends
-  `TagResult` with `mood`, `lighting`, `colorPalette`, `dominantSubject`,
-  `composition`, `textInImage`, `faceCount`, `caption`.
-  `packages/shared/src/prompts/asset-tagging.ts` instructs Claude to
-  populate them. **Revisit at Build D.** Generation is what decides
-  what shape the tag metadata needs to take; we picked the shape
-  without a driving query to pin it down. Cut, refactor, or adopt
-  once the gen loop writes its first asset-picker prompt.
+- **Vision-tagging schema v2** (`packages/ai/src/types.ts`,
+  `packages/shared/src/prompts/asset-tagging.ts`) —
+  **formally adopted by Build D.** The generator prompt feeds `caption`
+  + `mood` + `lighting` + `aesthetic` + `colorPalette` into the
+  candidate-asset pool rendered for Claude. No further action.
 
-- **Asset novelty score.** `apps/ops/src/lib/asset-novelty.ts` is a
-  pure-function 0..1 score derived from `useCount` + `lastUsedAt`.
-  Rendered on the asset detail page, not wired into any picker.
-  **Revisit at Build D** alongside the vision schema.
+- **Asset novelty score** (`apps/ops/src/lib/asset-novelty.ts`) —
+  **formally adopted by Build D.** Used to pre-rank the candidate pool
+  so the LLM sees the top 30 by novelty rather than the full library.
+  No further action.
 
-- **Asset-detail "Signals" + "Caption" cards.** Render the above two.
-  UI-only; cheap to strip if Build D supersedes them.
+- **Asset-detail "Signals" + "Caption" cards** — **kept**. Operator
+  wants to see what Claude will see. No separate home build; lives in
+  the content-detail page indefinitely.
 
 Items not counted as drift even though they landed mid-flight: the Drive
 file proxy route (`apps/ops/src/app/api/drive/file/[id]/route.ts`), the
