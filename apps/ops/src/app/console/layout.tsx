@@ -11,6 +11,7 @@ import {
   ShellNav,
   ShellSection,
 } from '@xcrm/ui';
+import { NoteHotkey } from './_components/note-hotkey';
 
 const NAV_PRIMARY = [
   { href: '/console', label: 'Dashboard', icon: 'D', hue: OPS_HUES.dashboard },
@@ -84,6 +85,7 @@ export default async function ConsoleLayout({ children }: { children: React.Reac
       }
     >
       {children}
+      <NoteHotkey />
     </Shell>
   );
 }

@@ -2,51 +2,59 @@
 
 import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
-import { prisma, ContextNoteStatus } from '@xcrm/db';
+import { prisma, ContextNoteStatus, Archetype } from '@xcrm/db';
 import { requireUser } from '@/lib/session';
 import {
-  ScopeSchema,
   DurationKey,
   durationToEffectiveUntil,
+  type Scope,
 } from '@/lib/context-notes';
 
-const createSchema = z.object({
+/**
+ * Form-data shape the overlay serialises:
+ *
+ *   title         string
+ *   body          string
+ *   weight        "1".."10"
+ *   durationKey   TODAY | THREE_DAYS | ONE_WEEK | UNTIL_REMOVED
+ *   scopeKind     ALL | ARCHETYPES | ACCOUNTS
+ *   archetypes    comma-separated when scopeKind === ARCHETYPES
+ *   accountHandles comma-separated @handles when scopeKind === ACCOUNTS
+ */
+const inputSchema = z.object({
   title: z.string().min(1).max(80),
   body: z.string().min(1).max(2000),
-  scope: ScopeSchema,
   weight: z.number().int().min(1).max(10),
   durationKey: DurationKey,
+  scopeKind: z.enum(['ALL', 'ARCHETYPES', 'ACCOUNTS']),
+  archetypes: z.array(z.nativeEnum(Archetype)).optional(),
+  accountHandles: z.array(z.string().min(1)).optional(),
 });
 
 export type ContextNoteFormState = { error?: string; ok?: boolean } | null;
 
-/**
- * Create a context note. Validates the scope discriminator + weight
- * range + duration mapping up-front so the row we write is always
- * in a known-good shape.
- */
+function splitCsv(raw: string | null): string[] {
+  if (!raw) return [];
+  return raw
+    .split(',')
+    .map((s) => s.trim().replace(/^@/, ''))
+    .filter(Boolean);
+}
+
 export async function createContextNote(
   _prev: ContextNoteFormState,
   formData: FormData,
 ): Promise<ContextNoteFormState> {
   const user = await requireUser();
 
-  // Decode the structured scope — the client serialises it to a
-  // single JSON string so we don't have to reassemble radio+multi in
-  // the FormData parsing.
-  let scopeRaw: unknown;
-  try {
-    scopeRaw = JSON.parse(String(formData.get('scope') ?? ''));
-  } catch {
-    return { error: 'Malformed scope.' };
-  }
-
-  const parsed = createSchema.safeParse({
+  const parsed = inputSchema.safeParse({
     title: String(formData.get('title') ?? '').trim(),
     body: String(formData.get('body') ?? '').trim(),
-    scope: scopeRaw,
     weight: Number(formData.get('weight') ?? 5),
     durationKey: formData.get('durationKey'),
+    scopeKind: formData.get('scopeKind'),
+    archetypes: splitCsv(formData.get('archetypes') as string | null),
+    accountHandles: splitCsv(formData.get('accountHandles') as string | null),
   });
   if (!parsed.success) {
     return {
@@ -54,6 +62,38 @@ export async function createContextNote(
         .map((i) => `${i.path.join('.')}: ${i.message}`)
         .join('; '),
     };
+  }
+
+  // Resolve the operator-friendly scope input into the storage shape.
+  let scope: Scope;
+  switch (parsed.data.scopeKind) {
+    case 'ALL':
+      scope = { kind: 'ALL' };
+      break;
+    case 'ARCHETYPES':
+      if (!parsed.data.archetypes || parsed.data.archetypes.length === 0) {
+        return { error: 'Pick at least one archetype.' };
+      }
+      scope = { kind: 'ARCHETYPES', archetypes: parsed.data.archetypes };
+      break;
+    case 'ACCOUNTS': {
+      if (!parsed.data.accountHandles || parsed.data.accountHandles.length === 0) {
+        return { error: 'List at least one account handle.' };
+      }
+      const accounts = await prisma.account.findMany({
+        where: { handle: { in: parsed.data.accountHandles }, deletedAt: null },
+        select: { id: true, handle: true },
+      });
+      const found = new Set(accounts.map((a) => a.handle));
+      const missing = parsed.data.accountHandles.filter((h) => !found.has(h));
+      if (missing.length > 0) {
+        return {
+          error: `Unknown handle${missing.length > 1 ? 's' : ''}: ${missing.map((h) => '@' + h).join(', ')}`,
+        };
+      }
+      scope = { kind: 'ACCOUNTS', accountIds: accounts.map((a) => a.id) };
+      break;
+    }
   }
 
   const now = new Date();
@@ -67,7 +107,7 @@ export async function createContextNote(
       effectiveFrom: now,
       effectiveUntil,
       weight: parsed.data.weight,
-      scope: parsed.data.scope,
+      scope,
       status: ContextNoteStatus.ACTIVE,
     },
   });
@@ -79,11 +119,6 @@ export async function createContextNote(
 
 const cancelSchema = z.object({ id: z.string().min(1) });
 
-/**
- * Operator-triggered cancellation. Distinct from EXPIRED so the audit
- * trail preserves intent — "operator killed this note" vs "note ran
- * its course".
- */
 export async function cancelContextNote(formData: FormData): Promise<void> {
   await requireUser();
   const parsed = cancelSchema.safeParse({ id: formData.get('id') });
