@@ -18,16 +18,19 @@ import {
 } from '@xcrm/ui';
 import { ACCOUNT_STATUS_HUE } from '@/lib/status-hues';
 import { relativeTime } from '@/lib/relative-time';
+import { isGenerationEligible } from '@/lib/confidence-routing';
 import {
   getActiveNotes,
   filterNotesForModel,
 } from '@/app/console/_loaders/active-notes';
+import { getScheduledPostsForModel } from '@/app/console/_loaders/scheduled-posts';
 import { NoteListItem } from '@/app/console/_components/note-list-item';
 import { ContentSourcesCard } from './_components/content-sources-card';
 import { RemoveAccountButton } from './_components/remove-account-button';
 import { RemoveModelCard } from './_components/remove-model-card';
 import { AnchorNav, type AnchorItem } from './_components/anchor-nav';
 import { SectionBlock } from './_components/section-block';
+import { GenerateDraftButton } from './_components/generate-draft-button';
 
 const ANCHOR_ITEMS: AnchorItem[] = [
   { id: 'overview', label: 'Overview', hint: 'identity + accounts' },
@@ -115,7 +118,10 @@ export default async function ModelDetailPage({
   });
   if (!model) notFound();
 
-  const activeNotes = await getActiveNotes();
+  const [activeNotes, scheduledPosts] = await Promise.all([
+    getActiveNotes(),
+    getScheduledPostsForModel(model.id),
+  ]);
   const notesForModel = filterNotesForModel(activeNotes, {
     archetype: model.archetype,
     accountIds: model.accounts.map((a) => a.id),
@@ -369,20 +375,111 @@ export default async function ModelDetailPage({
             ) : null}
           </SectionBlock>
 
-          {/* --- Scheduled / recent posts (stub) ---------------------------- */}
+          {/* --- Scheduled / pending posts --------------------------------- */}
           <SectionBlock
             id="scheduled"
-            title="Scheduled & recent posts"
-            subtitle="Build D"
+            title="Scheduled & pending posts"
+            subtitle={
+              scheduledPosts.length > 0
+                ? `${scheduledPosts.length} upcoming`
+                : undefined
+            }
           >
-            <Card className="p-5">
-              <p className="text-[13px] leading-relaxed text-fg-dim">
-                The generation loop is not yet wired up. Once Build D
-                lands, this section surfaces posts scheduled for this
-                model&apos;s accounts and recent posted results with their
-                engagement.
-              </p>
+            <Card className="p-4">
+              <div className="mb-3 flex flex-wrap items-center gap-2">
+                <span className="text-[11px] font-semibold uppercase tracking-[0.2em] text-fg-muted">
+                  Manual generation
+                </span>
+                {model.accounts.filter((a) =>
+                  isGenerationEligible(a.status),
+                ).length === 0 ? (
+                  <span className="text-[12px] text-fg-faint">
+                    No generation-eligible accounts. Move an account to
+                    ACTIVE_RAMPING or later to enable.
+                  </span>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {model.accounts
+                      .filter((a) => isGenerationEligible(a.status))
+                      .map((a) => (
+                        <GenerateDraftButton
+                          key={a.id}
+                          accountId={a.id}
+                          handle={a.handle}
+                        />
+                      ))}
+                  </div>
+                )}
+              </div>
             </Card>
+
+            {scheduledPosts.length === 0 ? (
+              <Card className="p-5">
+                <p className="text-[13px] leading-relaxed text-fg-dim">
+                  No drafts yet. Run manual generation above, or wait
+                  for the scheduled cron (default every 4h — gated by
+                  <code className="ml-1 font-mono text-fg-dim">
+                    GENERATE_ENABLED
+                  </code>
+                  ).
+                </p>
+              </Card>
+            ) : (
+              <Card className="p-4">
+                <ul className="flex flex-col divide-y divide-line text-[13px]">
+                  {scheduledPosts.map((p) => (
+                    <li key={p.id} className="flex flex-col gap-1 py-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-mono text-fg">
+                          @{p.accountHandle}
+                        </span>
+                        <Tag
+                          hue={
+                            p.status === 'PENDING_APPROVAL'
+                              ? 60
+                              : p.status === 'SCHEDULED'
+                                ? 135
+                                : null
+                          }
+                          size="sm"
+                        >
+                          {p.status.toLowerCase().replace(/_/g, ' ')}
+                        </Tag>
+                        {p.confidenceScore !== null ? (
+                          <Tag hue={OPS_HUES.formula} size="sm">
+                            conf {(p.confidenceScore * 100).toFixed(0)}%
+                          </Tag>
+                        ) : null}
+                        {p.scheduledFor ? (
+                          <span className="text-[12px] text-fg-dim">
+                            for {p.scheduledFor.toISOString().slice(0, 16).replace('T', ' ')} UTC
+                          </span>
+                        ) : null}
+                        <span className="ml-auto text-[11px] text-fg-faint">
+                          {relativeTime(p.createdAt)}
+                        </span>
+                      </div>
+                      <p className="whitespace-pre-wrap text-fg">
+                        {p.copy}
+                      </p>
+                      {p.reasoning ? (
+                        <p className="text-[11px] leading-relaxed text-fg-faint">
+                          {p.reasoning}
+                        </p>
+                      ) : null}
+                      {p.assetId ? (
+                        <Link
+                          href={`/console/content/${p.assetId}`}
+                          className="text-[11px] text-fg-dim hover:text-fg"
+                        >
+                          view asset →
+                        </Link>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              </Card>
+            )}
           </SectionBlock>
 
           {/* --- Context notes --------------------------------------------- */}

@@ -1,4 +1,10 @@
-import { prisma, AccountStatus, DriveSourceStatus, DriveSyncStatus } from '@xcrm/db';
+import {
+  prisma,
+  AccountStatus,
+  DriveSourceStatus,
+  DriveSyncStatus,
+  PostStatus,
+} from '@xcrm/db';
 import {
   contentRunwayState,
   escalatedTasksState,
@@ -11,6 +17,14 @@ import {
   type SignalLightState,
   type Severity,
 } from '@/lib/signal-lights';
+
+/**
+ * Default daily post cadence per account. Used to compute runway days
+ * from `scheduled posts in next 14 days / (accounts * cadence)`.
+ * Tunable — we'll make this per-formula in Build G once engagement
+ * data drives cadence choices.
+ */
+const DEFAULT_CADENCE_PER_DAY = 3;
 
 export type RosterAccount = {
   id: string;
@@ -50,7 +64,9 @@ export type RosterRow = {
  * within).
  */
 export async function getRosterModels(): Promise<RosterRow[]> {
-  const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const now = new Date();
+  const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  const fourteenDaysFromNow = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
 
   const models = await prisma.model.findMany({
     where: { deletedAt: null },
@@ -114,6 +130,42 @@ export async function getRosterModels(): Promise<RosterRow[]> {
     }
   }
 
+  // Post counts for runway + review-queue signals. One grouped query
+  // keyed by accountId → we map back to models via the accounts list.
+  const accountIds = models.flatMap((m) => m.accounts.map((a) => a.id));
+  const postCounts = accountIds.length
+    ? await prisma.post.groupBy({
+        by: ['accountId', 'status'],
+        where: {
+          accountId: { in: accountIds },
+          deletedAt: null,
+          OR: [
+            {
+              status: PostStatus.SCHEDULED,
+              scheduledFor: { gte: now, lte: fourteenDaysFromNow },
+            },
+            { status: PostStatus.PENDING_APPROVAL },
+          ],
+        },
+        _count: { _all: true },
+      })
+    : [];
+  const scheduledByAccount = new Map<string, number>();
+  const pendingByAccount = new Map<string, number>();
+  for (const row of postCounts) {
+    if (row.status === PostStatus.SCHEDULED) {
+      scheduledByAccount.set(
+        row.accountId,
+        (scheduledByAccount.get(row.accountId) ?? 0) + row._count._all,
+      );
+    } else if (row.status === PostStatus.PENDING_APPROVAL) {
+      pendingByAccount.set(
+        row.accountId,
+        (pendingByAccount.get(row.accountId) ?? 0) + row._count._all,
+      );
+    }
+  }
+
   const rows: RosterRow[] = models.map((m) => {
     // Fold drive-source sync info across all this model's sources.
     let failedInLast24h = 0;
@@ -137,7 +189,20 @@ export async function getRosterModels(): Promise<RosterRow[]> {
       (a) => a.status === AccountStatus.QUARANTINED,
     ).length;
 
-    const runway = contentRunwayState(null); // STUB pre-Build D
+    // Runway: scheduled-in-next-14d / (accounts × cadence). No accounts
+    // → can't compute → STUB (fall back to null).
+    let scheduledIn14d = 0;
+    let pendingApprovalCount = 0;
+    for (const a of m.accounts) {
+      scheduledIn14d += scheduledByAccount.get(a.id) ?? 0;
+      pendingApprovalCount += pendingByAccount.get(a.id) ?? 0;
+    }
+    const runwayDays =
+      m.accounts.length > 0
+        ? scheduledIn14d / (m.accounts.length * DEFAULT_CADENCE_PER_DAY)
+        : null;
+
+    const runway = contentRunwayState(runwayDays);
     const escalated = escalatedTasksState(null); // STUB pre-Build F
     const failedSyncs = failedSyncsState({
       failedInLast24h,
@@ -145,7 +210,11 @@ export async function getRosterModels(): Promise<RosterRow[]> {
     });
     const quarantined = quarantinedAccountsState(quarantinedCount);
     const onboarding = incompleteOnboardingState(m.onboardingCompletedAt);
-    const reviewQueue = reviewQueueState(null); // STUB pre-Build E
+    // Review queue renders NEUTRAL with the count when > 0, STUB
+    // otherwise. Keeps the roster clean on day-1 when no posts exist.
+    const reviewQueue = reviewQueueState(
+      pendingApprovalCount > 0 ? pendingApprovalCount : null,
+    );
 
     const signalStates: SignalLightState[] = [
       runway,
@@ -183,7 +252,7 @@ export async function getRosterModels(): Promise<RosterRow[]> {
         quarantined,
         onboarding,
         reviewQueue,
-        reviewQueueCount: null,
+        reviewQueueCount: pendingApprovalCount > 0 ? pendingApprovalCount : null,
       },
       severity,
     };

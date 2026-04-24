@@ -2,6 +2,91 @@
 
 Per spec §9 step 8 — every shipped feature logged here.
 
+## Unreleased — Build D: Generation loop v1 (2026-04-23)
+
+The autonomous generator. Per `/docs/operational-model.md` "The
+generation loop": runs on a 4h cron, produces drafts, routes by
+confidence into SCHEDULED or PENDING_APPROVAL. Plan committed ahead
+of code at `/docs/builds/build-d-plan.md`. Three commits + plan:
+
+- **Plan + off-spec adoption** (`f6648c1`) — Build D plan written;
+  vision-tagging schema v2 and the asset-novelty score (the previous
+  "off-spec carryovers") are formally adopted by D since the
+  generator now uses both. Operational model doc updated to reflect.
+
+- **Backend primitives** (`ae260da`) — pure logic, prompt templates,
+  Claude call:
+  - `packages/shared/src/prompts/draft-post.ts` — system prompt
+    (ephemeral-cached) + `buildDraftPostUserPrompt()` that renders
+    a compact view of model + account + active notes + asset pool.
+    Caption is the retrieval backbone; mood/lighting/aesthetic/novelty
+    ride along as tiebreakers.
+  - `packages/ai/src/draft-post.ts` — `draftPost(input) → DraftResultT`.
+    Mirrors `tagAsset()` shape: tolerant JSON extraction, schema
+    validation, `AiDraftError` on bad parse / out-of-pool assetId.
+    Text-only call (no image bytes) — caption-driven.
+  - `apps/ops/src/lib/post-scheduler.ts` — pure scheduler.
+    Walks hour-by-hour from next-full-hour, picks the first peak-hour
+    slot ≥ `SPACING_HOURS=3` clear of existing scheduled times,
+    within a 72h horizon. Defaults peak hours to `[9,12,18,21]` UTC
+    when `Account.peakHours` is empty.
+  - `apps/ops/src/lib/confidence-routing.ts` — thresholds: FRESH_BUILD
+    always reviews, ACTIVE_RAMPING <0.8, ACTIVE_ESTABLISHED <0.7,
+    ACTIVE_MATURE <0.6.
+  - 35 new tests across the three new modules.
+
+- **Orchestrator + cron** (`ec1a894`) — wiring:
+  - `apps/ops/src/services/generate-draft.ts` —
+    `generateDraftForAccount(accountId)` returns a discriminated
+    outcome (CREATED / SKIPPED / NO_SLOT / LLM_ERROR). Gate order
+    skips the LLM call when no schedule slot is available, saving
+    a doomed Anthropic spend. `runScheduledGeneration()` fans the
+    orchestrator across every eligible account.
+  - `apps/ops/src/app/api/generate/cron/route.ts` — CRON_SECRET-
+    gated. Separate `GENERATE_ENABLED` flag so preview deploys don't
+    burn credits. Returns `{ accountsRun, created, skipped, noSlot,
+    errors }`.
+  - `apps/ops/src/app/api/generate/[accountId]/route.ts` —
+    session-gated manual trigger. Bypasses `GENERATE_ENABLED` (a
+    click is always intentional).
+  - `apps/ops/src/app/console/_loaders/candidate-assets.ts` — pool
+    predicate + novelty rank + top-30 cap. Excludes assets already
+    committed to PENDING_APPROVAL/APPROVED/SCHEDULED posts on the
+    account so the generator can't double-book.
+  - `apps/ops/src/instrumentation.ts` — third cron registered
+    alongside drive-sync and context-notes-expire. Default
+    `GENERATE_CRON=0 */4 * * *`.
+  - `infra/env/.env.example` — `GENERATE_CRON` + `GENERATE_ENABLED`
+    documented.
+
+- **UI surfaces + signal unstubbing** (this commit):
+  - Surface 3 `#scheduled` block now real: a "Manual generation" row
+    with one `<GenerateDraftButton>` per generation-eligible account,
+    plus a list of upcoming SCHEDULED + PENDING_APPROVAL posts (copy,
+    confidence chip, scheduled-for, reasoning, asset link).
+  - Roster signal lights flip from STUB to live for **runway** and
+    **review queue depth**. Runway = `scheduledIn14d / (accounts ×
+    DEFAULT_CADENCE_PER_DAY=3)`. Review queue renders NEUTRAL with
+    the count when > 0, STUB when 0 (keeps day-one rosters clean).
+  - One grouped Prisma `groupBy` query feeds both signals — the
+    roster loader doesn't N+1.
+  - Generate button POSTs to `/api/generate/[accountId]`, surfaces
+    the orchestrator outcome inline ("Draft scheduled · conf 78%" or
+    "No open slot in the next 72h" etc.), then `router.refresh()`.
+
+Schema changes: none. `Post`, `PostStatus`, `Post.confidenceScore`,
+`Post.generationMeta`, `Account.peakHours`, `AssetUsage` were all
+present from Phase 0.
+
+Workspace: typecheck + lint + 76 ops tests + 16 ai tests + 5 shared
+tests pass; build emits `/api/generate/cron` and
+`/api/generate/[accountId]` as dynamic.
+
+Anti-goals honoured: no review queue UI (that's Build E — D just
+writes PENDING_APPROVAL rows for E to render), no VA task creation
+(F), no engagement ingest (G), no camps (H), no actual posting,
+no per-account timezone, no rejected-draft training loop.
+
 ## Unreleased — Build C: Context note system (2026-04-23)
 
 Per `/docs/operational-model.md` "The context note mechanic". The
