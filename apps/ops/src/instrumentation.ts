@@ -166,6 +166,65 @@ export async function register() {
     );
   }
 
+  // -------------------------------------------------------------------------
+  // generation cron (Build D)
+  // -------------------------------------------------------------------------
+  const genExpr = process.env.GENERATE_CRON || '0 */4 * * *';
+  const genTarget = `${baseUrl}/api/generate/cron`;
+  if (!cron.validate(genExpr)) {
+    console.error(
+      `[instrumentation] invalid GENERATE_CRON "${genExpr}" — generation cron NOT started.`,
+    );
+  } else {
+    let genRunning = false;
+    cron.schedule(genExpr, async () => {
+      if (genRunning) {
+        console.log('[scheduler] gen tick skipped — previous run still in flight');
+        return;
+      }
+      genRunning = true;
+      const started = Date.now();
+      try {
+        const res = await fetch(genTarget, {
+          method: 'POST',
+          headers: { 'x-cron-secret': secret },
+        });
+        const body = (await res.json().catch(() => ({}))) as {
+          disabled?: boolean;
+          accountsRun?: number;
+          created?: number;
+          skipped?: number;
+          noSlot?: number;
+          errors?: number;
+          error?: string;
+        };
+        if (!res.ok) {
+          console.error(
+            `[scheduler] gen tick HTTP ${res.status} in ${Date.now() - started}ms:`,
+            body.error ?? '(no body)',
+          );
+        } else if (body.disabled) {
+          // Quiet by design — GENERATE_ENABLED gates manual acts of
+          // Anthropic spend. The cron just checks in.
+        } else {
+          console.log(
+            `[scheduler] gen tick ok — accounts=${body.accountsRun ?? 0} created=${body.created ?? 0} skipped=${body.skipped ?? 0} noSlot=${body.noSlot ?? 0} errors=${body.errors ?? 0} in ${Date.now() - started}ms`,
+          );
+        }
+      } catch (err) {
+        console.error(
+          '[scheduler] gen tick fetch failed:',
+          err instanceof Error ? err.message : String(err),
+        );
+      } finally {
+        genRunning = false;
+      }
+    });
+    console.log(
+      `[instrumentation] generation cron registered with expression "${genExpr}" → ${genTarget}`,
+    );
+  }
+
   registered = true;
   console.log(
     `[instrumentation] drive-sync cron registered with expression "${expr}" → ${target}`,
