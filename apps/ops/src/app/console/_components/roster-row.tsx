@@ -10,71 +10,77 @@ import { SignalLight } from './signal-light';
  * pre-computed `RosterRow` data from `_loaders/roster.ts`. No
  * per-model fetches here.
  *
- * Click target: the whole row. Anchors are nested only for nav-able
- * sub-elements (agency name, account handles link to their pages).
+ * Layout note: the row used to be one big `<a>`. Build E breaks that
+ * up so the review-queue pill can be its own link without nesting
+ * anchors. The name+archetype + accounts area is the primary drill
+ * target; the review pill is a sibling link to /console/review.
  */
 export function RosterRowView({ row }: { row: RosterRowData }) {
   const hasIncompleteOnboarding = row.onboardingCompletedAt === null;
   const detailHref = hasIncompleteOnboarding
     ? `/console/onboard?modelId=${row.id}`
     : `/console/models/${row.id}`;
+  const reviewCount = row.signals.reviewQueueCount;
 
   return (
-    <Link
-      href={detailHref}
-      className="group flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-line bg-surface/40 px-4 py-3 transition hover:border-fg-muted"
-    >
-      {/* Name + archetype */}
-      <div className="min-w-[180px] flex-[2] basis-[180px]">
-        <div className="flex items-center gap-2">
-          <span className="text-[14px] font-medium text-fg">{row.displayName}</span>
-          <Tag hue={OPS_HUES.models} size="sm">
-            {row.archetype.toLowerCase().replace(/_/g, ' ')}
-          </Tag>
+    <div className="group flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-line bg-surface/40 px-4 py-3 transition hover:border-fg-muted">
+      {/* Drill target: name + accounts. Stays inside one Link. */}
+      <Link
+        href={detailHref}
+        className="flex min-w-0 flex-[3] basis-[400px] flex-wrap items-center gap-x-4 gap-y-2"
+      >
+        <div className="min-w-[180px] flex-[2] basis-[180px]">
+          <div className="flex items-center gap-2">
+            <span className="text-[14px] font-medium text-fg">{row.displayName}</span>
+            <Tag hue={OPS_HUES.models} size="sm">
+              {row.archetype.toLowerCase().replace(/_/g, ' ')}
+            </Tag>
+          </div>
+          <div className="mt-0.5 text-[11px] text-fg-dim">
+            {row.agency.name} <span className="text-fg-faint">({row.agency.slug})</span>
+          </div>
         </div>
-        <div className="mt-0.5 text-[11px] text-fg-dim">
-          {row.agency.name} <span className="text-fg-faint">({row.agency.slug})</span>
+
+        <div className="min-w-[200px] flex-[2] basis-[200px]">
+          {row.accounts.length === 0 ? (
+            <span className="text-[12px] text-fg-faint">no accounts</span>
+          ) : (
+            <ul className="flex flex-wrap gap-x-3 gap-y-1">
+              {row.accounts.map((a) => (
+                <li
+                  key={a.id}
+                  className="flex items-center gap-1.5 text-[12px]"
+                >
+                  <span className="font-mono text-fg">@{a.handle}</span>
+                  <Tag hue={ACCOUNT_STATUS_HUE[a.status]} size="sm">
+                    {a.status.toLowerCase().replace(/_/g, ' ')}
+                  </Tag>
+                  <span className="tabular-nums text-fg-dim">
+                    {a.followerCount.toLocaleString()}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
-      </div>
+      </Link>
 
-      {/* Account handles + follower counts */}
-      <div className="min-w-[200px] flex-[2] basis-[200px]">
-        {row.accounts.length === 0 ? (
-          <span className="text-[12px] text-fg-faint">no accounts</span>
-        ) : (
-          <ul className="flex flex-wrap gap-x-3 gap-y-1">
-            {row.accounts.map((a) => (
-              <li
-                key={a.id}
-                className="flex items-center gap-1.5 text-[12px]"
-              >
-                <span className="font-mono text-fg">@{a.handle}</span>
-                <Tag hue={ACCOUNT_STATUS_HUE[a.status]} size="sm">
-                  {a.status.toLowerCase().replace(/_/g, ' ')}
-                </Tag>
-                <span className="tabular-nums text-fg-dim">
-                  {a.followerCount.toLocaleString()}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-
-      {/* Signal lights */}
+      {/* Signal pills — outside the Link so the review pill can be its own anchor. */}
       <div className="flex flex-1 flex-wrap items-center justify-end gap-1.5">
         {hasIncompleteOnboarding ? (
-          <SignalLight
-            state="YELLOW"
-            label="Resume onboarding"
-            title="Onboarding started but not completed."
-          />
+          <Link href={detailHref}>
+            <SignalLight
+              state="YELLOW"
+              label="Resume onboarding"
+              title="Onboarding started but not completed."
+            />
+          </Link>
         ) : (
           <>
             <SignalLight
               state={row.signals.runway}
               label="Runway"
-              title="Days of scheduled posts. Data source arrives with Build D."
+              title="Days of scheduled posts (cron + manual generation contribute)."
             />
             <SignalLight
               state={row.signals.escalated}
@@ -91,22 +97,22 @@ export function RosterRowView({ row }: { row: RosterRowData }) {
               label="Quarantine"
               title="Accounts currently in QUARANTINED status."
             />
-            {row.signals.reviewQueue === 'NEUTRAL' && row.signals.reviewQueueCount !== null ? (
-              <SignalLight
-                state="NEUTRAL"
-                label="Review"
-                count={row.signals.reviewQueueCount}
-                title="Posts pending operator review."
-              />
+            {row.signals.reviewQueue === 'NEUTRAL' && reviewCount !== null ? (
+              <Link href="/console/review" title="Posts pending operator review.">
+                <SignalLight
+                  state="NEUTRAL"
+                  label="Review"
+                  count={reviewCount}
+                />
+              </Link>
             ) : null}
           </>
         )}
       </div>
 
-      {/* Last-activity timestamp */}
       <div className="min-w-[90px] text-right text-[11px] text-fg-faint">
         {relativeTime(row.lastActivity)}
       </div>
-    </Link>
+    </div>
   );
 }

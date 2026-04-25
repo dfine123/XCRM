@@ -455,6 +455,14 @@ export default async function ModelDetailPage({
                             for {p.scheduledFor.toISOString().slice(0, 16).replace('T', ' ')} UTC
                           </span>
                         ) : null}
+                        {p.status === 'PENDING_APPROVAL' ? (
+                          <Link
+                            href={`/console/review#post-${p.id}`}
+                            className="text-[11px] font-medium text-fg-dim hover:text-fg"
+                          >
+                            review →
+                          </Link>
+                        ) : null}
                         <span className="ml-auto text-[11px] text-fg-faint">
                           {relativeTime(p.createdAt)}
                         </span>

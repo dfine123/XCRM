@@ -29,6 +29,10 @@ export default async function RosterPage() {
     yellow: rows.filter((r) => r.severity === 2).length,
     total: rows.length,
   };
+  const reviewQueueTotal = rows.reduce(
+    (sum, r) => sum + (r.signals.reviewQueueCount ?? 0),
+    0,
+  );
 
   return (
     <>
@@ -54,12 +58,22 @@ export default async function RosterPage() {
       />
 
       <div className="mb-5 flex flex-col gap-3 rounded-lg border border-line bg-surface/40 px-4 py-3">
-        <ActiveNotesStrip
-          count={activeNotes.length}
-          expanded={activeNotes.map((n) => (
-            <NoteListItem key={n.id} note={n} />
-          ))}
-        />
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <ActiveNotesStrip
+            count={activeNotes.length}
+            expanded={activeNotes.map((n) => (
+              <NoteListItem key={n.id} note={n} />
+            ))}
+          />
+          {reviewQueueTotal > 0 ? (
+            <Link
+              href="/console/review"
+              className="text-[12px] font-medium text-fg-dim hover:text-fg"
+            >
+              Review queue: {reviewQueueTotal} pending →
+            </Link>
+          ) : null}
+        </div>
       </div>
 
       {rows.length === 0 ? (

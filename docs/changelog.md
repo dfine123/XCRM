@@ -2,6 +2,69 @@
 
 Per spec §9 step 8 — every shipped feature logged here.
 
+## Unreleased — Build E: Review queue UI (2026-04-23)
+
+The operator surface for triaging the `PENDING_APPROVAL` posts that
+Build D produces. Per spec ("not a daily destination"): roster signal
+light surfaces it when there's something to look at, otherwise quiet.
+Plan at `/docs/builds/build-e-plan.md`. Two commits:
+
+- **Backend** (`a9326eb`) —
+  - `apps/ops/src/app/console/_loaders/review-queue.ts`:
+    `getReviewQueue()` returns FIFO PENDING_APPROVAL posts with
+    model + account + agency joins. Cap 100; filtering and
+    pagination deliberately deferred to a future build.
+  - `apps/ops/src/app/console/_loaders/asset-alternatives.ts`:
+    `getAssetAlternativesForAccount()` reuses Build D's candidate-
+    asset predicate to surface top-N novelty alternatives for the
+    Edit form's swap UI.
+  - `apps/ops/src/app/console/review/actions.ts`: three server
+    actions:
+    - `approvePost` — PENDING_APPROVAL → SCHEDULED, idempotent on
+      already-resolved posts. Records approval in
+      `generationMeta.approval` for Build G's signal-learning.
+    - `rejectPost` — PENDING_APPROVAL → CANCELLED with optional
+      reason persisted at `generationMeta.rejection` (the negative-
+      signal feedback Build G will consume).
+    - `editAndApprovePost` — `useFormState`-shaped action.
+      Updates copy + assetIds, sets SCHEDULED, records original
+      values at `generationMeta.edit`. Asset must belong to the
+      same model (no cross-model swaps). Validates copy ≤280 / ≥1.
+  - 11 new tests covering each action's branches.
+
+- **UI + roster wiring** (this commit) —
+  - `/console/review` page (server component). Loads queue + asset
+    alternatives in parallel, renders one card per pending post
+    with copy preview + thumbnail + confidence + reasoning + hard
+    rules + three actions.
+  - `_components/review-item.tsx` — per-card render. Server
+    component; the action triggers are forms or client expanders.
+  - `_components/edit-form.tsx` — client expander. Copy textarea
+    with 280-counter, current-asset + up-to-6 alternatives as
+    click-to-swap thumbnails (proxied via `/api/drive/file/[id]`),
+    plus a paste-an-ID escape hatch for assets outside the top-N.
+  - `_components/reject-form.tsx` — client expander. Confirm with
+    optional reason textarea; submit posts to `rejectPost`.
+  - Roster header band: "Review queue: N pending →" link appears
+    when total > 0; hidden on healthy days.
+  - Roster row restructured so the review-queue pill can be its
+    own `<Link>` to `/console/review` without nesting anchors. The
+    name + accounts area remains the primary drill target into
+    model detail.
+  - Model detail `#scheduled` block: each PENDING_APPROVAL row
+    gets a "review →" anchor link to `/console/review#post-<id>`
+    so operators can drill from a model into the queue with
+    scroll-to-item.
+
+Schema impact: none. Workspace: 87 ops + 16 ai + 5 shared tests pass;
+typecheck + lint clean; `/console/review` is in the route manifest as
+dynamic.
+
+Anti-goals honoured: no bulk approve/reject, no schedule-time
+editing, no filtering on the queue page, no rejected-posts recovery
+flow, no inline content-library picker (the alternatives + manual-ID
+escape hatch is enough for v1).
+
 ## Unreleased — Build D: Generation loop v1 (2026-04-23)
 
 The autonomous generator. Per `/docs/operational-model.md` "The
