@@ -2,6 +2,83 @@
 
 Per spec §9 step 8 — every shipped feature logged here.
 
+## Unreleased — Build F: VA checklist runner (2026-04-23)
+
+The pipeline ends at the VA. Build F gives them a fullscreen,
+keyboard-driven runner that turns SCHEDULED Posts (Build D output, or
+Build E approvals) into actual posted content. Per spec, this is "the
+build that deserves the most craft" — v1 ships the spine; polish
+iterates from operator feedback.
+
+Plan at `/docs/builds/build-f-plan.md`. Three commits:
+
+- **Backend** (`53636f3`) —
+  - `apps/ops/src/lib/va-queue.ts` + 7 tests: pure `composeBatch()`
+    that groups pickable posts by `phoneDeviceId` (device affinity
+    per spec), picks the heaviest group, sorts by `scheduledFor`,
+    caps at 10.
+  - `apps/ops/src/app/va/_loaders/`: `getOpenBatchForUser()` for
+    landing-page resume, `getBatchWithTasks()` auth-scoped for the
+    runner.
+  - `apps/ops/src/app/va/actions.ts` — four server actions:
+    - `pickUpBatch()` — just-in-time materialisation. SCHEDULED
+      Posts due in next 24h, filter out posts already locked by a
+      live PENDING Task, run composeBatch, transactionally create
+      TaskBatch + N Tasks, redirect to runner. Idempotent — already-
+      open batch wins.
+    - `markTaskDone()` — Task COMPLETED + Post POSTED + postedAt;
+      bumps batch progress; closes batch on the last task.
+    - `escalateTask()` — Task ESCALATED with reason; Post returns
+      to PENDING_APPROVAL with `generationMeta.escalation` so the
+      review queue surfaces it with context.
+    - `skipTask()` — Task SKIPPED; Post stays SCHEDULED for re-pickup.
+  - 10 action tests + 7 queue tests = 17 new (104 total).
+
+- **Runner UI** (`e71ebc6`) —
+  - `apps/ops/src/app/va/page.tsx` — landing. Resume open batch OR
+    pick-up CTA. Replaces the StatCard placeholder.
+  - `apps/ops/src/app/va/batch/page.tsx` — redirects to either the
+    open batch or back to /va.
+  - `apps/ops/src/app/va/batch/[id]/page.tsx` — server component;
+    auth-scoped batch load; hands off to `<TaskRunner>`.
+  - `apps/ops/src/app/va/_components/task-runner.tsx` — fullscreen
+    `fixed inset-0` overlay (same URL, no chrome). Two-column body:
+    asset preview + copy on the left, action buttons + per-task nav
+    strip on the right.
+  - Keyboard contract: `D`/`Enter` done, `E` escalate (opens reason
+    form), `S` skip, `J`/`→` next, `K`/`←` previous, `Esc` exit.
+    Guards inputs/textareas/selects so typing doesn't fire keys.
+  - `apps/ops/src/app/va/_components/escalate-form.tsx` — inline
+    reason form, posts to `escalateTask`.
+  - Layout role gate updated: FOUNDER + PARTNER admitted alongside
+    VA tiers, per "operators can switch hats" spec line.
+
+- **Roster signal unstubbing** (this commit) —
+  - `_loaders/roster.ts`: counts unresolved escalations per
+    account = ESCALATED Tasks whose corresponding Post is still in
+    PENDING_APPROVAL (operator hasn't dealt with them yet). Joined
+    via `Task.payload.postId` since Task has no direct postId
+    column.
+  - `RosterRow.signals.escalatedCount` carries the number through
+    to the row view.
+  - `<RosterRowView>`: Escalated pill now renders the count
+    ("Escalated 3"). Threshold logic stays as-is (GREEN 0,
+    YELLOW 1-2, RED 3+).
+
+Schema impact: none. Workspace: typecheck + lint clean, 104 ops tests
++ 16 ai tests + 5 shared tests pass; build emits the new dynamic
+routes.
+
+Anti-goals honoured: no platform integration (VA executes manually),
+POST tasks only (replies/reposts/warmups deferred), no QualitySample
+flow, no evidence upload, no `/va/escalations` real content, no
+nav-sidebar reshape (still tracked in `/docs/reality-delta.md`).
+
+This closes the v1 loop. The system can now: onboard a model,
+ingest content, generate drafts, route by confidence, surface a
+review queue, hand approved drafts to a VA, mark them posted —
+end to end.
+
 ## Unreleased — Build E: Review queue UI (2026-04-23)
 
 The operator surface for triaging the `PENDING_APPROVAL` posts that

@@ -4,6 +4,7 @@ import {
   DriveSourceStatus,
   DriveSyncStatus,
   PostStatus,
+  TaskStatus,
 } from '@xcrm/db';
 import {
   contentRunwayState,
@@ -44,6 +45,8 @@ export type RosterRow = {
   signals: {
     runway: SignalLightState;
     escalated: SignalLightState;
+    /** Unresolved escalations count, rendered as the pill's number. */
+    escalatedCount: number;
     failedSyncs: SignalLightState;
     quarantined: SignalLightState;
     /** 'YELLOW' when onboarding incomplete, null when complete (no pill). */
@@ -150,6 +153,51 @@ export async function getRosterModels(): Promise<RosterRow[]> {
         _count: { _all: true },
       })
     : [];
+  // Escalated tasks per account — feeds the "escalated" signal pill.
+  // An ESCALATED task that the operator has already dealt with (Post
+  // returned to PENDING_APPROVAL → re-approved → re-batched) leaves
+  // the original ESCALATED row in place as audit. We count only those
+  // tied to a Post that's still PENDING_APPROVAL — i.e. unresolved
+  // escalations from the operator's perspective.
+  const escalatedTaskRows = accountIds.length
+    ? await prisma.task.findMany({
+        where: {
+          status: TaskStatus.ESCALATED,
+          accountId: { in: accountIds },
+        },
+        select: { accountId: true, payload: true },
+      })
+    : [];
+  const escalatedPostIds = escalatedTaskRows
+    .map((t) => {
+      const p = (t.payload ?? {}) as Record<string, unknown>;
+      return typeof p.postId === 'string' ? p.postId : null;
+    })
+    .filter((id): id is string => id !== null);
+  const stillPendingPosts =
+    escalatedPostIds.length > 0
+      ? await prisma.post.findMany({
+          where: {
+            id: { in: escalatedPostIds },
+            status: PostStatus.PENDING_APPROVAL,
+            deletedAt: null,
+          },
+          select: { id: true },
+        })
+      : [];
+  const stillPendingPostIds = new Set(stillPendingPosts.map((p) => p.id));
+  const unresolvedEscalationsByAccount = new Map<string, number>();
+  for (const t of escalatedTaskRows) {
+    const p = (t.payload ?? {}) as Record<string, unknown>;
+    const postId = typeof p.postId === 'string' ? p.postId : null;
+    if (postId && stillPendingPostIds.has(postId)) {
+      unresolvedEscalationsByAccount.set(
+        t.accountId,
+        (unresolvedEscalationsByAccount.get(t.accountId) ?? 0) + 1,
+      );
+    }
+  }
+
   const scheduledByAccount = new Map<string, number>();
   const pendingByAccount = new Map<string, number>();
   for (const row of postCounts) {
@@ -193,9 +241,11 @@ export async function getRosterModels(): Promise<RosterRow[]> {
     // → can't compute → STUB (fall back to null).
     let scheduledIn14d = 0;
     let pendingApprovalCount = 0;
+    let unresolvedEscalations = 0;
     for (const a of m.accounts) {
       scheduledIn14d += scheduledByAccount.get(a.id) ?? 0;
       pendingApprovalCount += pendingByAccount.get(a.id) ?? 0;
+      unresolvedEscalations += unresolvedEscalationsByAccount.get(a.id) ?? 0;
     }
     const runwayDays =
       m.accounts.length > 0
@@ -203,7 +253,13 @@ export async function getRosterModels(): Promise<RosterRow[]> {
         : null;
 
     const runway = contentRunwayState(runwayDays);
-    const escalated = escalatedTasksState(null); // STUB pre-Build F
+    // Escalated: live count of unresolved escalations across this
+    // model's accounts. STUB only when accounts list is empty (can't
+    // attribute) — otherwise green/yellow/red per the threshold.
+    const escalated =
+      m.accounts.length === 0
+        ? escalatedTasksState(null)
+        : escalatedTasksState(unresolvedEscalations);
     const failedSyncs = failedSyncsState({
       failedInLast24h,
       consecutiveFailuresMostRecent,
@@ -248,6 +304,7 @@ export async function getRosterModels(): Promise<RosterRow[]> {
       signals: {
         runway,
         escalated,
+        escalatedCount: unresolvedEscalations,
         failedSyncs,
         quarantined,
         onboarding,

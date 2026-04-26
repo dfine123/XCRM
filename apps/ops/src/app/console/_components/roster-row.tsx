@@ -85,7 +85,8 @@ export function RosterRowView({ row }: { row: RosterRowData }) {
             <SignalLight
               state={row.signals.escalated}
               label="Escalated"
-              title="Unresolved escalated tasks. Data source arrives with Build F."
+              count={row.signals.escalatedCount > 0 ? row.signals.escalatedCount : undefined}
+              title="Unresolved VA escalations on this model's accounts. Click an item from /console/review to resolve."
             />
             <SignalLight
               state={row.signals.failedSyncs}
