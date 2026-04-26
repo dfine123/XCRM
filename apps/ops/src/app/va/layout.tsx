@@ -20,8 +20,16 @@ export default async function VALayout({ children }: { children: React.ReactNode
   const session = await auth();
   if (!session) redirect('/login');
   const { role, name } = session.user;
-  const isVA = role === 'VA_T1' || role === 'VA_T2' || role === 'VA_T3';
-  if (!isVA) redirect('/console');
+  // Per /docs/operational-model.md: operators (FOUNDER / PARTNER) can
+  // switch hats and execute tasks themselves — same UI, same queue.
+  // VAs of any tier can also be here.
+  const allowed =
+    role === 'VA_T1' ||
+    role === 'VA_T2' ||
+    role === 'VA_T3' ||
+    role === 'FOUNDER' ||
+    role === 'PARTNER';
+  if (!allowed) redirect('/login');
 
   async function doSignOut() {
     'use server';
