@@ -5,6 +5,7 @@ import {
   PostStatus,
 } from '@xcrm/db';
 import { computeNoveltyScore } from '@/lib/asset-novelty';
+import { loadCampMateBlocks } from './camp-mate-blocks';
 import type { Prompts } from '@xcrm/shared';
 
 const POOL_CAP = 30;
@@ -38,25 +39,33 @@ export async function loadCandidateAssets(
   if (!account || account.deletedAt) return [];
 
   // Assets already committed to live/pending Posts — we flatten their
-  // assetIds and exclude them from the pool.
-  const committedPosts = await prisma.post.findMany({
-    where: {
-      accountId,
-      deletedAt: null,
-      status: {
-        in: [
-          PostStatus.PENDING_APPROVAL,
-          PostStatus.APPROVED,
-          PostStatus.SCHEDULED,
-        ],
+  // assetIds and exclude them from the pool. Run in parallel with the
+  // camp-mate block lookup so the predicate stays one round-trip.
+  const [committedPosts, campMateBlocks] = await Promise.all([
+    prisma.post.findMany({
+      where: {
+        accountId,
+        deletedAt: null,
+        status: {
+          in: [
+            PostStatus.PENDING_APPROVAL,
+            PostStatus.APPROVED,
+            PostStatus.SCHEDULED,
+          ],
+        },
       },
-    },
-    select: { assetIds: true },
-  });
+      select: { assetIds: true },
+    }),
+    // Build H camp-spacing: assets recently scheduled or posted on a
+    // camp-mate within ±72h are off-limits.
+    loadCampMateBlocks(accountId),
+  ]);
+
   const committed = new Set<string>();
   for (const p of committedPosts) {
     for (const id of p.assetIds) committed.add(id);
   }
+  for (const id of campMateBlocks) committed.add(id);
 
   const rows = await prisma.contentAsset.findMany({
     where: {
