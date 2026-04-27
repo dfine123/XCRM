@@ -225,6 +225,59 @@ export async function register() {
     );
   }
 
+  // -------------------------------------------------------------------------
+  // engagement peak-hour recompute cron (Build G)
+  // -------------------------------------------------------------------------
+  const peakExpr =
+    process.env.ENGAGEMENT_PEAK_RECOMPUTE_CRON || '*/30 * * * *';
+  const peakTarget = `${baseUrl}/api/engagement/recompute-peak-hours/cron`;
+  if (!cron.validate(peakExpr)) {
+    console.error(
+      `[instrumentation] invalid ENGAGEMENT_PEAK_RECOMPUTE_CRON "${peakExpr}" — peak-hour cron NOT started.`,
+    );
+  } else {
+    let peakRunning = false;
+    cron.schedule(peakExpr, async () => {
+      if (peakRunning) {
+        console.log('[scheduler] peak-hour tick skipped — previous run still in flight');
+        return;
+      }
+      peakRunning = true;
+      const started = Date.now();
+      try {
+        const res = await fetch(peakTarget, {
+          method: 'POST',
+          headers: { 'x-cron-secret': secret },
+        });
+        const body = (await res.json().catch(() => ({}))) as {
+          accountsScanned?: number;
+          accountsUpdated?: number;
+          error?: string;
+        };
+        if (!res.ok) {
+          console.error(
+            `[scheduler] peak-hour tick HTTP ${res.status} in ${Date.now() - started}ms:`,
+            body.error ?? '(no body)',
+          );
+        } else if ((body.accountsUpdated ?? 0) > 0) {
+          console.log(
+            `[scheduler] peak-hour tick ok — scanned=${body.accountsScanned} updated=${body.accountsUpdated} in ${Date.now() - started}ms`,
+          );
+        }
+      } catch (err) {
+        console.error(
+          '[scheduler] peak-hour tick fetch failed:',
+          err instanceof Error ? err.message : String(err),
+        );
+      } finally {
+        peakRunning = false;
+      }
+    });
+    console.log(
+      `[instrumentation] engagement peak-hour cron registered with expression "${peakExpr}" → ${peakTarget}`,
+    );
+  }
+
   registered = true;
   console.log(
     `[instrumentation] drive-sync cron registered with expression "${expr}" → ${target}`,
