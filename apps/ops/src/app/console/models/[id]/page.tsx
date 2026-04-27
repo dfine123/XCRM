@@ -24,6 +24,7 @@ import {
   filterNotesForModel,
 } from '@/app/console/_loaders/active-notes';
 import { getScheduledPostsForModel } from '@/app/console/_loaders/scheduled-posts';
+import { getCampsForAccount } from '@/app/console/_loaders/camps';
 import { NoteListItem } from '@/app/console/_components/note-list-item';
 import { ContentSourcesCard } from './_components/content-sources-card';
 import { RemoveAccountButton } from './_components/remove-account-button';
@@ -118,10 +119,16 @@ export default async function ModelDetailPage({
   });
   if (!model) notFound();
 
-  const [activeNotes, scheduledPosts] = await Promise.all([
+  const [activeNotes, scheduledPosts, perAccountCamps] = await Promise.all([
     getActiveNotes(),
     getScheduledPostsForModel(model.id),
+    Promise.all(
+      model.accounts.map(async (a) =>
+        [a.id, await getCampsForAccount(a.id)] as const,
+      ),
+    ),
   ]);
+  const campsByAccount = new Map(perAccountCamps);
   const notesForModel = filterNotesForModel(activeNotes, {
     archetype: model.archetype,
     accountIds: model.accounts.map((a) => a.id),
@@ -282,46 +289,69 @@ export default async function ModelDetailPage({
                     <TH>Handle</TH>
                     <TH>Status</TH>
                     <TH>Device</TH>
+                    <TH>Camps</TH>
                     <TH className="text-right tabular-nums">Followers</TH>
                     <TH className="w-24 text-right">&nbsp;</TH>
                   </TR>
                 </THead>
                 <TBody>
-                  {model.accounts.map((a) => (
-                    <TR key={a.id}>
-                      <TD className="font-mono text-fg">@{a.handle}</TD>
-                      <TD>
-                        <Tag hue={ACCOUNT_STATUS_HUE[a.status]} size="sm">
-                          {a.status.toLowerCase().replace(/_/g, ' ')}
-                        </Tag>
-                      </TD>
-                      <TD className="text-fg-dim">
-                        {a.phoneDevice ? (
-                          a.phoneDevice.label
-                        ) : (
-                          <span className="text-fg-faint">—</span>
-                        )}
-                      </TD>
-                      <TD className="text-right tabular-nums">
-                        {a.followerCount.toLocaleString()}
-                      </TD>
-                      <TD className="text-right">
-                        <div className="inline-flex items-center gap-2">
-                          <Link
-                            href={`/console/accounts/${a.id}`}
-                            className="text-[13px] text-fg-dim hover:text-fg"
-                          >
-                            Open →
-                          </Link>
-                          <RemoveAccountButton
-                            accountId={a.id}
-                            handle={a.handle}
-                            modelId={model.id}
-                          />
-                        </div>
-                      </TD>
-                    </TR>
-                  ))}
+                  {model.accounts.map((a) => {
+                    const camps = campsByAccount.get(a.id) ?? [];
+                    return (
+                      <TR key={a.id}>
+                        <TD className="font-mono text-fg">@{a.handle}</TD>
+                        <TD>
+                          <Tag hue={ACCOUNT_STATUS_HUE[a.status]} size="sm">
+                            {a.status.toLowerCase().replace(/_/g, ' ')}
+                          </Tag>
+                        </TD>
+                        <TD className="text-fg-dim">
+                          {a.phoneDevice ? (
+                            a.phoneDevice.label
+                          ) : (
+                            <span className="text-fg-faint">—</span>
+                          )}
+                        </TD>
+                        <TD>
+                          {camps.length === 0 ? (
+                            <span className="text-fg-faint">—</span>
+                          ) : (
+                            <div className="flex flex-wrap gap-1.5">
+                              {camps.map((c) => (
+                                <Link
+                                  key={c.campId}
+                                  href={`/console/camps/${c.campId}`}
+                                >
+                                  <Tag hue={OPS_HUES.camps} size="sm">
+                                    week of{' '}
+                                    {c.weekOf.toISOString().slice(0, 10)}
+                                  </Tag>
+                                </Link>
+                              ))}
+                            </div>
+                          )}
+                        </TD>
+                        <TD className="text-right tabular-nums">
+                          {a.followerCount.toLocaleString()}
+                        </TD>
+                        <TD className="text-right">
+                          <div className="inline-flex items-center gap-2">
+                            <Link
+                              href={`/console/accounts/${a.id}`}
+                              className="text-[13px] text-fg-dim hover:text-fg"
+                            >
+                              Open →
+                            </Link>
+                            <RemoveAccountButton
+                              accountId={a.id}
+                              handle={a.handle}
+                              modelId={model.id}
+                            />
+                          </div>
+                        </TD>
+                      </TR>
+                    );
+                  })}
                 </TBody>
               </Table>
             )}

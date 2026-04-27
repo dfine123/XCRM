@@ -2,6 +2,76 @@
 
 Per spec §9 step 8 — every shipped feature logged here.
 
+## Unreleased — Build H: Camps + asset-spacing coordination (2026-04-23)
+
+The last build in the A–H sequence. Camps group accounts that share a
+content library so the generator avoids scheduling the same asset
+across them within a 72-hour window. Per spec, camps are deferred —
+"a grouping primitive layered on top, not a prerequisite" — so v1
+keeps it tight: operator-managed, no algorithmic proposal, no repost
+flow integration.
+
+Plan at `/docs/builds/build-h-plan.md`. Two commits:
+
+- **Backend** (`defba2e`) —
+  - `apps/ops/src/lib/camp-spacing.ts` + 8 tests — pure
+    `assetsBlockedByCampMates({assetId, scheduledFor, postedAt}, now,
+    spacingHours=72)`. `postedAt` takes precedence over
+    `scheduledFor`. Symmetric ±72h window.
+  - `apps/ops/src/app/console/_loaders/camp-mate-blocks.ts` —
+    finds ACTIVE camps the target is in, gathers other-account
+    memberships, queries their live Posts (PENDING_APPROVAL /
+    APPROVED / SCHEDULED / POSTED) within ±72h, returns
+    `Set<assetId>`. Fast path: empty set when account is in zero
+    ACTIVE camps.
+  - `_loaders/candidate-assets.ts` — Build D's predicate now also
+    excludes camp-mate-blocked assets. Runs in `Promise.all` with
+    the existing committed-posts query so the predicate stays one
+    round-trip group.
+  - `_loaders/camps.ts` — `getCampList`, `getCampDetail`,
+    `getCampsForAccount` for the model-detail integration.
+  - `apps/ops/src/app/console/camps/actions.ts` + 11 tests —
+    `createCamp`, `activateCamp`, `completeCamp`,
+    `addAccountToCamp` (operator-friendly, resolves @handle to
+    account ID), `removeAccountFromCamp`. Idempotent on duplicate
+    membership (P2002 → success).
+
+- **UI + model-detail integration** (this commit) —
+  - `/console/camps` list (replaces the Phase-0 placeholder) —
+    sorted ACTIVE → PROPOSED → COMPLETED, week-of desc within group.
+  - `/console/camps/new` create form, defaults `weekOf` to next
+    Sunday.
+  - `/console/camps/[id]` detail — members table with status chips,
+    add-by-handle form, lifecycle buttons (Activate / Complete),
+    cross-model warning when membership spans different models
+    (asset libraries don't overlap so spacing is moot for those
+    pairs).
+  - Model detail Overview block: accounts table gains a "Camps"
+    column linking to ACTIVE camps each account belongs to.
+
+Workspace: typecheck + lint + 138 ops tests + 16 ai + 5 shared = 159
+total pass. Build emits `/console/camps`, `/console/camps/new`,
+`/console/camps/[id]` as dynamic.
+
+Schema impact: none. `Camp`, `CampMembership`, `CampPairingHistory`,
+`CampStatus` were all in place from Phase 0.
+
+Anti-goals honoured: no algorithmic camp proposals, no repost flow
+integration, no `CampPairingHistory` writes (model is there but
+unused in v1), no auto-activate or auto-complete cron, no per-camp
+engagement aggregation, no roster "in-camp" pill, no nav-sidebar
+reshape (still tracked in `/docs/reality-delta.md`).
+
+Build sequence A–H is now complete end-to-end:
+- A. Onboarding ✓
+- B. Roster + Model detail ✓
+- C. Context notes ✓
+- D. Generation loop v1 ✓
+- E. Review queue ✓
+- F. VA checklist runner ✓
+- G. Engagement ingest ✓
+- H. Camps ✓
+
 ## Unreleased — Build G: Engagement ingest + learning loop (2026-04-23)
 
 Closes the feedback half of the v1 loop. Posts go out (Build F),
