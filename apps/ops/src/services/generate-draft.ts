@@ -7,6 +7,8 @@ import {
 } from '@/lib/confidence-routing';
 import { pickScheduledTime } from '@/lib/post-scheduler';
 import { loadCandidateAssets } from '@/app/console/_loaders/candidate-assets';
+import { loadEngagementSamplesForAccount } from '@/app/console/_loaders/engagement-samples';
+import { summariseEngagement } from '@/lib/engagement-aggregation';
 import {
   getActiveNotes,
   filterNotesForModel,
@@ -99,14 +101,16 @@ export async function generateDraftForAccount(
   if (!scheduledFor) return { kind: 'NO_SLOT' };
 
   // Context assembly.
-  const [assets, activeNotes] = await Promise.all([
+  const [assets, activeNotes, engagementSamples] = await Promise.all([
     loadCandidateAssets(accountId),
     getActiveNotes(),
+    loadEngagementSamplesForAccount(accountId),
   ]);
   const scopedNotes = filterNotesForModel(activeNotes, {
     archetype: account.model.archetype,
     accountIds: [account.id],
   });
+  const engagementSummary = summariseEngagement(engagementSamples);
 
   const promptInput: Prompts.DraftPromptInput = {
     model: {
@@ -127,10 +131,29 @@ export async function generateDraftForAccount(
       weight: n.weight,
     })),
     assets,
+    engagement:
+      engagementSummary.sampleCount > 0
+        ? {
+            sampleCount: engagementSummary.sampleCount,
+            topAesthetics: engagementSummary.topAesthetics.map((f) => ({
+              key: f.key,
+              avgRate: f.avgRate,
+            })),
+            topMoods: engagementSummary.topMoods.map((f) => ({
+              key: f.key,
+              avgRate: f.avgRate,
+            })),
+            topLightings: engagementSummary.topLightings.map((f) => ({
+              key: f.key,
+              avgRate: f.avgRate,
+            })),
+            peakHoursUtc: engagementSummary.peakHoursUtc,
+          }
+        : undefined,
   };
 
   console.log(
-    `[gen] draft start accountId=${accountId} handle=@${account.handle} status=${account.status} pool=${assets.length} notes=${scopedNotes.length}`,
+    `[gen] draft start accountId=${accountId} handle=@${account.handle} status=${account.status} pool=${assets.length} notes=${scopedNotes.length} engagement=${engagementSummary.sampleCount}`,
   );
 
   let draft;

@@ -2,6 +2,75 @@
 
 Per spec §9 step 8 — every shipped feature logged here.
 
+## Unreleased — Build G: Engagement ingest + learning loop (2026-04-23)
+
+Closes the feedback half of the v1 loop. Posts go out (Build F),
+engagement comes back, generator gets smarter on the next run.
+
+Plan at `/docs/builds/build-g-plan.md`. v1 ships everything **except
+the wire protocol to X**: schema usage, source-agnostic ingest API,
+manual-entry UI, aggregation lib, peak-hour learning cron, generator
+prompt integration. When real X-API or scraping access lands later,
+it just hits the existing `/api/engagement/ingest` endpoint.
+
+Three commits:
+
+- **Backend** (`6850975`) —
+  - `apps/ops/src/lib/engagement-aggregation.ts` + 15 tests:
+    `engagementScore` (weighted), `engagementRate` (per-impression),
+    `topFacetsByRate` (with min-samples gate), `derivePeakHours`
+    (top-k UTC, fallback merge with defaults), `summariseEngagement`.
+  - `POST /api/engagement/ingest` — `CRON_SECRET`-gated. Body:
+    `{postId | platformPostId, likes, reposts, replies, bookmarks,
+    impressions, profileClicks, capturedAt?}`. Inserts a fresh
+    `PostEngagement` snapshot. Source-agnostic by design.
+  - `apps/ops/src/services/recompute-peak-hours.ts` +
+    `POST /api/engagement/recompute-peak-hours/cron` — updates
+    `Account.peakHours` for accounts with ≥5 samples in last 30d.
+    Build D's scheduler reads `peakHours` already; new values flow
+    in on the next scheduler call.
+  - `apps/ops/src/instrumentation.ts` — fourth cron registered
+    alongside drive-sync, context-notes-expire, generation. Default
+    `*/30 * * * *`. Quiet on no-op.
+  - Server action `recordEngagement` for the manual flow.
+
+- **Manual-entry UI** (`777d092`) —
+  - `/console/engagement` page lists POSTED posts with no snapshot
+    OR latest snapshot >6h old. Newest first, cap 100.
+  - `<EngagementForm>` — six number inputs + submit, latest-snapshot
+    values prefilled as defaults so re-entry is keystroke-cheap.
+  - `getPostsNeedingEngagement()` loader.
+
+- **Generator integration** (this commit) —
+  - `packages/shared/src/prompts/draft-post.ts` — `DraftPromptInput`
+    gains optional `engagement` field; `buildDraftPostUserPrompt`
+    renders an "Engagement insights" section with top
+    aesthetics / moods / lighting + best UTC hours when sample
+    count > 0. Skipped block (with explanatory line) when no data.
+  - `apps/ops/src/services/generate-draft.ts` — orchestrator loads
+    samples in parallel with assets + notes, summarises, passes
+    into the prompt input. Cron log line gains an `engagement=N`
+    counter.
+
+Schema impact: none. `PostEngagement`, `Account.peakHours`,
+`Post.platformPostId` were all in place from Phase 0.
+
+Workspace: typecheck + lint clean, 119 ops + 16 ai + 5 shared = 140
+tests pass. Build emits `/console/engagement`,
+`/api/engagement/ingest`, `/api/engagement/recompute-peak-hours/cron`
+as dynamic.
+
+Required Railway env additions when you flip it on:
+- `ENGAGEMENT_PEAK_RECOMPUTE_CRON` (optional; default `*/30 * * * *`)
+
+The existing `DRIVE_SYNC_SCHEDULE_ENABLED=true` + `CRON_SECRET` gate
+the cron runner — same as the other crons.
+
+Anti-goals honoured: no X-API client, no scraping client, no
+engagement-driven cadence tuning, no per-formula tuning, no roster
+"stale engagement" pill, no `Insights`-table generation. The seam
+for real ingestion is `POST /api/engagement/ingest`.
+
 ## Unreleased — Build F: VA checklist runner (2026-04-23)
 
 The pipeline ends at the VA. Build F gives them a fullscreen,

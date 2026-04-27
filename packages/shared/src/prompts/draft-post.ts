@@ -79,6 +79,19 @@ export type DraftPromptContextNote = {
   weight: number;
 };
 
+/**
+ * Engagement insights for the account, computed by the Build G
+ * aggregation lib. Optional — when absent or `sampleCount=0` the
+ * generator runs on baseline signals and the prompt skips the block.
+ */
+export type DraftPromptEngagement = {
+  sampleCount: number;
+  topAesthetics: { key: string; avgRate: number }[];
+  topMoods: { key: string; avgRate: number }[];
+  topLightings: { key: string; avgRate: number }[];
+  peakHoursUtc: number[];
+};
+
 export type DraftPromptInput = {
   model: {
     displayName: string;
@@ -94,10 +107,12 @@ export type DraftPromptInput = {
   };
   activeNotes: DraftPromptContextNote[];
   assets: DraftPromptAsset[];
+  /** Optional — present when engagement data exists for this account. */
+  engagement?: DraftPromptEngagement;
 };
 
 export function buildDraftPostUserPrompt(input: DraftPromptInput): string {
-  const { model, account, activeNotes, assets } = input;
+  const { model, account, activeNotes, assets, engagement } = input;
 
   const lines: string[] = [];
   lines.push('## Model profile');
@@ -117,6 +132,37 @@ export function buildDraftPostUserPrompt(input: DraftPromptInput): string {
   lines.push(`Followers: ${account.followerCount}`);
   lines.push('');
 
+  lines.push('## Engagement insights (last 30 days)');
+  if (!engagement || engagement.sampleCount === 0) {
+    lines.push('(no engagement data yet — running on baseline signals.)');
+  } else {
+    const fmtFacet = (f: { key: string; avgRate: number }) =>
+      `${f.key} (rate ${(f.avgRate * 100).toFixed(2)}%)`;
+    if (engagement.topAesthetics.length > 0) {
+      lines.push(
+        `Top aesthetics: ${engagement.topAesthetics.map(fmtFacet).join(', ')}`,
+      );
+    }
+    if (engagement.topMoods.length > 0) {
+      lines.push(
+        `Top moods: ${engagement.topMoods.map(fmtFacet).join(', ')}`,
+      );
+    }
+    if (engagement.topLightings.length > 0) {
+      lines.push(
+        `Top lighting: ${engagement.topLightings.map(fmtFacet).join(', ')}`,
+      );
+    }
+    if (engagement.peakHoursUtc.length > 0) {
+      lines.push(
+        `Best UTC hours: ${engagement.peakHoursUtc.join(', ')}`,
+      );
+    }
+    lines.push(
+      `(${engagement.sampleCount} sample${engagement.sampleCount === 1 ? '' : 's'} — soft signal, not a hard rule.)`,
+    );
+  }
+  lines.push('');
   lines.push('## Active context notes');
   if (activeNotes.length === 0) {
     lines.push('(none — run on baseline signals)');
