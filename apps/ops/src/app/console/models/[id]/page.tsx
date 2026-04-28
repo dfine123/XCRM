@@ -26,6 +26,7 @@ import {
 import { getScheduledPostsForModel } from '@/app/console/_loaders/scheduled-posts';
 import { getCampsForAccount } from '@/app/console/_loaders/camps';
 import { NoteListItem } from '@/app/console/_components/note-list-item';
+import { PostPreview } from '@/app/console/_components/post-preview';
 import { ContentSourcesCard } from './_components/content-sources-card';
 import { RemoveAccountButton } from './_components/remove-account-button';
 import { RemoveModelCard } from './_components/remove-model-card';
@@ -455,68 +456,74 @@ export default async function ModelDetailPage({
                 </p>
               </Card>
             ) : (
-              <Card className="p-4">
-                <ul className="flex flex-col divide-y divide-line text-[13px]">
-                  {scheduledPosts.map((p) => (
-                    <li key={p.id} className="flex flex-col gap-1 py-3">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="font-mono text-fg">
-                          @{p.accountHandle}
-                        </span>
-                        <Tag
-                          hue={
-                            p.status === 'PENDING_APPROVAL'
-                              ? 60
-                              : p.status === 'SCHEDULED'
-                                ? 135
-                                : null
-                          }
-                          size="sm"
-                        >
-                          {p.status.toLowerCase().replace(/_/g, ' ')}
+              <ul className="flex flex-col gap-4">
+                {scheduledPosts.map((p) => (
+                  <li key={p.id} className="flex flex-col gap-2">
+                    {/* Operator metadata above the preview, kept out
+                        of the tweet card so the preview stays an
+                        honest representation of what the audience sees. */}
+                    <div className="flex flex-wrap items-center gap-2 text-[12px]">
+                      <span className="font-mono text-fg">
+                        @{p.accountHandle}
+                      </span>
+                      <Tag
+                        hue={
+                          p.status === 'PENDING_APPROVAL'
+                            ? 60
+                            : p.status === 'SCHEDULED'
+                              ? 135
+                              : null
+                        }
+                        size="sm"
+                      >
+                        {p.status.toLowerCase().replace(/_/g, ' ')}
+                      </Tag>
+                      {p.confidenceScore !== null ? (
+                        <Tag hue={OPS_HUES.formula} size="sm">
+                          conf {(p.confidenceScore * 100).toFixed(0)}%
                         </Tag>
-                        {p.confidenceScore !== null ? (
-                          <Tag hue={OPS_HUES.formula} size="sm">
-                            conf {(p.confidenceScore * 100).toFixed(0)}%
-                          </Tag>
-                        ) : null}
-                        {p.scheduledFor ? (
-                          <span className="text-[12px] text-fg-dim">
-                            for {p.scheduledFor.toISOString().slice(0, 16).replace('T', ' ')} UTC
-                          </span>
-                        ) : null}
-                        {p.status === 'PENDING_APPROVAL' ? (
-                          <Link
-                            href={`/console/review#post-${p.id}`}
-                            className="text-[11px] font-medium text-fg-dim hover:text-fg"
-                          >
-                            review →
-                          </Link>
-                        ) : null}
-                        <span className="ml-auto text-[11px] text-fg-faint">
-                          {relativeTime(p.createdAt)}
-                        </span>
-                      </div>
-                      <p className="whitespace-pre-wrap text-fg">
-                        {p.copy}
-                      </p>
-                      {p.reasoning ? (
-                        <p className="text-[11px] leading-relaxed text-fg-faint">
-                          {p.reasoning}
-                        </p>
                       ) : null}
-                      {p.assetId ? (
+                      {p.scheduledFor ? (
+                        <span className="text-fg-dim">
+                          for {p.scheduledFor.toISOString().slice(0, 16).replace('T', ' ')} UTC
+                        </span>
+                      ) : null}
+                      {p.status === 'PENDING_APPROVAL' ? (
                         <Link
-                          href={`/console/content/${p.assetId}`}
-                          className="text-[11px] text-fg-dim hover:text-fg"
+                          href={`/console/review#post-${p.id}`}
+                          className="font-medium text-fg-dim hover:text-fg"
                         >
-                          view asset →
+                          review →
                         </Link>
                       ) : null}
-                    </li>
-                  ))}
-                </ul>
-              </Card>
+                      <span className="ml-auto text-[11px] text-fg-faint">
+                        {relativeTime(p.createdAt)}
+                      </span>
+                    </div>
+
+                    <PostPreview
+                      displayName={model.displayName}
+                      handle={p.accountHandle}
+                      copy={p.copy}
+                      assetId={p.assetId}
+                      postedTimestamp={
+                        p.scheduledFor
+                          ? p.scheduledFor.toISOString().slice(0, 10)
+                          : undefined
+                      }
+                    />
+
+                    {p.reasoning ? (
+                      <p className="text-[11px] leading-relaxed text-fg-faint">
+                        <span className="font-semibold uppercase tracking-[0.15em] text-fg-muted">
+                          reasoning ·{' '}
+                        </span>
+                        {p.reasoning}
+                      </p>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
             )}
           </SectionBlock>
 

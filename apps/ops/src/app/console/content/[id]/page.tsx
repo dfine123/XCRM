@@ -17,6 +17,7 @@ import {
 } from '@xcrm/ui';
 import { relativeTime } from '@/lib/relative-time';
 import { computeNoveltyScore } from '@/lib/asset-novelty';
+import { AssetImage } from '@/app/console/_components/asset-image';
 import { ManualTagsForm } from './_components/manual-tags-form';
 import { DeleteAssetForm } from './_components/delete-asset-form';
 
@@ -137,13 +138,13 @@ export default async function AssetDetailPage({ params }: { params: { id: string
                   controls
                   className="h-full w-full object-contain"
                 />
-              ) : src ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={src} alt="" className="h-full w-full object-contain" />
               ) : (
-                <div className="flex h-full w-full items-center justify-center text-[12px] uppercase tracking-[0.2em] text-fg-faint">
-                  no preview
-                </div>
+                <AssetImage
+                  assetId={asset.id}
+                  alt=""
+                  className="h-full w-full object-contain"
+                  fallbackText="Drive fetch failed"
+                />
               )}
             </div>
           </Card>
