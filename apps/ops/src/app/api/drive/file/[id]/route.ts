@@ -2,41 +2,27 @@ import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { prisma } from '@xcrm/db';
 import { fetchFileBytes } from '@xcrm/drive-adapter';
-
-/**
- * Image MIME types the browser can render in an <img>. Everything else
- * (HEIC, HEIF, TIFF, RAW, …) returns 415 with a helpful payload — we'd
- * rather surface "this format isn't browser-renderable" than ship bytes
- * Chrome will refuse to draw and silently break the preview.
- *
- * iPhones default to HEIC. If an operator drops phone photos straight
- * into Drive, this is the most common reason a preview fails.
- */
-const BROWSER_RENDERABLE_IMAGE_MIMES = new Set([
-  'image/jpeg',
-  'image/jpg',
-  'image/png',
-  'image/webp',
-  'image/gif',
-  'image/avif',
-  'image/svg+xml',
-  'image/bmp',
-  'image/x-icon',
-  'image/vnd.microsoft.icon',
-]);
+import {
+  isBrowserRenderable,
+  convertToBrowserJpeg,
+} from '@/lib/image-convert';
 
 /**
  * GET /api/drive/file/[id]
  *
  * Streams a ContentAsset's file bytes, fetched server-side through the
- * service-account JWT.
+ * service-account JWT. iPhone HEIC/HEIF and other browser-incompatible
+ * formats are transparently re-encoded to JPEG via sharp so the
+ * operator never has to think about source format.
  *
  * Auth: requires an ops session (FOUNDER | PARTNER).
  *
- * Caching: private, 1-day max-age, ETag tied to Drive's md5 checksum.
+ * Caching: private, 1-day max-age. ETag derived from Drive's md5 +
+ * a "-jpg" suffix when we re-encoded — keeps converted output cached
+ * separately from the original.
  *
- * Diagnostic mode: ?probe=1 returns JSON `{ok, mime, size, ...}` instead
- * of bytes. The `<AssetImage>` UI fallback fetches this on render error
+ * Diagnostic mode: ?probe=1 returns JSON `{ok, mime, ...}` instead of
+ * bytes. The `<AssetImage>` UI fallback fetches this on render error
  * to surface the actual cause to the operator.
  */
 export async function GET(
@@ -48,11 +34,11 @@ export async function GET(
 
   const session = await auth();
   if (!session?.user?.id) {
-    return jsonOrText(probe, { error: 'unauthorized' }, 401);
+    return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
   const role = session.user.role;
   if (role !== 'FOUNDER' && role !== 'PARTNER') {
-    return jsonOrText(probe, { error: 'forbidden' }, 403);
+    return NextResponse.json({ error: 'forbidden' }, { status: 403 });
   }
 
   const asset = await prisma.contentAsset.findFirst({
@@ -60,53 +46,75 @@ export async function GET(
     select: { driveFileId: true, driveChecksum: true, type: true },
   });
   if (!asset) {
-    return jsonOrText(probe, { error: 'asset not found' }, 404);
+    return NextResponse.json({ error: 'asset not found' }, { status: 404 });
   }
   if (!asset.driveFileId) {
-    return jsonOrText(
-      probe,
+    return NextResponse.json(
       {
         error: 'asset has no drive file',
         detail: 'Asset is not Drive-sourced (e.g. portal upload).',
       },
-      404,
+      { status: 404 },
     );
   }
 
-  // Conditional GET — only meaningful for the bytes path; probe always
-  // returns fresh.
-  const etag = asset.driveChecksum ? `"${asset.driveChecksum}"` : null;
-  if (!probe) {
-    const ifNoneMatch = req.headers.get('if-none-match');
-    if (etag && ifNoneMatch && ifNoneMatch === etag) {
-      return new Response(null, { status: 304, headers: { etag } });
-    }
-  }
-
-  let bytes: Buffer;
-  let mime: string;
+  // Fetch original bytes.
+  let originalBytes: Buffer;
+  let originalMime: string;
   try {
     const res = await fetchFileBytes(asset.driveFileId);
-    bytes = res.bytes;
-    mime = res.mime;
+    originalBytes = res.bytes;
+    originalMime = res.mime;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(
       `[drive:file] assetId=${params.id} driveFileId=${asset.driveFileId} fetch failed:`,
       message,
     );
-    return jsonOrText(
-      probe,
+    return NextResponse.json(
       { error: 'drive fetch failed', detail: message },
-      502,
+      { status: 502 },
     );
   }
 
-  // Diagnostic logging: every successful fetch records what we got. Cheap
-  // grep target when an operator hits "image unavailable" and pings us.
-  console.log(
-    `[drive:file] assetId=${params.id} mime=${mime} size=${bytes.length}`,
-  );
+  // Decide: ship as-is, or re-encode? Only image/* outside the
+  // browser-renderable set go through sharp. Videos pass through as
+  // their original mime so the <video> tag works.
+  let outBytes: Buffer = originalBytes;
+  let outMime: string = originalMime;
+  let converted = false;
+  if (
+    originalMime.startsWith('image/') &&
+    !isBrowserRenderable(originalMime)
+  ) {
+    try {
+      const out = await convertToBrowserJpeg(originalBytes);
+      outBytes = out.bytes;
+      outMime = out.mime;
+      converted = true;
+      console.log(
+        `[drive:file] assetId=${params.id} converted ${originalMime} → image/jpeg (${originalBytes.length} → ${outBytes.length} bytes)`,
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(
+        `[drive:file] assetId=${params.id} mime=${originalMime} convert failed:`,
+        message,
+      );
+      return NextResponse.json(
+        {
+          error: 'unsupported image format',
+          mime: originalMime,
+          detail: `${originalMime} couldn't be decoded. ${message}`,
+        },
+        { status: 415 },
+      );
+    }
+  } else {
+    console.log(
+      `[drive:file] assetId=${params.id} mime=${originalMime} size=${originalBytes.length}`,
+    );
+  }
 
   if (probe) {
     return NextResponse.json({
@@ -114,47 +122,33 @@ export async function GET(
       assetId: params.id,
       assetType: asset.type,
       driveFileId: asset.driveFileId,
-      mime,
-      size: bytes.length,
-      browserRenderable: BROWSER_RENDERABLE_IMAGE_MIMES.has(mime),
+      mime: outMime,
+      originalMime,
+      converted,
+      size: outBytes.length,
+      originalSize: originalBytes.length,
+      browserRenderable: true,
     });
   }
 
-  // Hard guard against shipping bytes the browser can't draw. Without
-  // this, Chrome silently 0×0s the <img> and the user sees a blank box.
-  // We return 415 with a payload the AssetImage onError handler can read
-  // via the probe path.
-  if (mime.startsWith('image/') && !BROWSER_RENDERABLE_IMAGE_MIMES.has(mime)) {
-    console.warn(
-      `[drive:file] assetId=${params.id} mime=${mime} not browser-renderable — returning 415`,
-    );
-    return NextResponse.json(
-      {
-        error: 'unsupported image format',
-        mime,
-        detail: `${mime} can't render in <img>. Re-export the source as JPEG or PNG.`,
-      },
-      { status: 415 },
-    );
+  // ETag distinguishes converted output so a converted-then-re-fetched
+  // request gets the cached JPEG, not the raw HEIC bytes.
+  const etag = asset.driveChecksum
+    ? `"${asset.driveChecksum}${converted ? '-jpg' : ''}"`
+    : null;
+  const ifNoneMatch = req.headers.get('if-none-match');
+  if (etag && ifNoneMatch && ifNoneMatch === etag) {
+    return new Response(null, { status: 304, headers: { etag } });
   }
 
   const headers: Record<string, string> = {
-    'Content-Type': mime,
-    'Content-Length': String(bytes.length),
+    'Content-Type': outMime,
+    'Content-Length': String(outBytes.length),
     'Cache-Control': 'private, max-age=86400, must-revalidate',
-    // Greppable header — devtools Network tab surfaces this without
-    // hitting the probe endpoint.
-    'X-Drive-Mime': mime,
+    'X-Drive-Mime': originalMime,
+    ...(converted ? { 'X-Drive-Converted': '1' } : {}),
   };
   if (etag) headers['ETag'] = etag;
 
-  return new Response(new Uint8Array(bytes), { status: 200, headers });
-}
-
-function jsonOrText(
-  probe: boolean,
-  body: { error: string; detail?: string; [k: string]: unknown },
-  status: number,
-) {
-  return NextResponse.json(body, { status });
+  return new Response(new Uint8Array(outBytes), { status: 200, headers });
 }

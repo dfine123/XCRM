@@ -1,6 +1,7 @@
 import { prisma, AssetTagStatus } from '@xcrm/db';
 import { fetchFileBytes, isTaggableImageMime } from '@xcrm/drive-adapter';
 import { tagAsset } from '@xcrm/ai';
+import { convertToBrowserJpeg } from './image-convert';
 
 /**
  * Inline asset auto-tagger. Ports the logic from
@@ -10,6 +11,12 @@ import { tagAsset } from '@xcrm/ai';
  * forget from {@link runDriveSync} so the HTTP handler isn't blocked waiting
  * for Claude. Catches its own errors and flips tagStatus → FAILED so the UI
  * can surface a retry affordance later.
+ *
+ * iPhone HEIC/HEIF and other non-Anthropic-vision-supported image formats
+ * are transparently re-encoded to JPEG via sharp before the tagging call —
+ * same path the proxy uses for browser previews. Without this, iPhone
+ * photos shipped straight from Drive would land as TAGGED-with-empty-tags
+ * and the generator would fly blind on them.
  */
 export async function tagAssetInline(assetId: string): Promise<void> {
   const asset = await prisma.contentAsset.findUnique({
@@ -19,16 +26,43 @@ export async function tagAssetInline(assetId: string): Promise<void> {
   if (!asset || asset.deletedAt || !asset.driveFileId) return;
 
   try {
-    const { bytes, mime } = await fetchFileBytes(asset.driveFileId);
+    let { bytes, mime } = await fetchFileBytes(asset.driveFileId);
+
     if (!isTaggableImageMime(mime)) {
-      await prisma.contentAsset.update({
-        where: { id: assetId },
-        data: { tagStatus: AssetTagStatus.TAGGED, autoTags: {} },
-      });
-      return;
+      if (mime.startsWith('image/')) {
+        // HEIC, HEIF, TIFF, etc. → re-encode to JPEG and try again.
+        try {
+          const out = await convertToBrowserJpeg(bytes);
+          bytes = out.bytes;
+          mime = out.mime;
+          console.log(
+            `[tag-asset] assetId=${assetId} converted source for tagging`,
+          );
+        } catch (convErr) {
+          console.warn(
+            `[tag-asset] assetId=${assetId} couldn't convert ${mime}; skipping vision call.`,
+            convErr instanceof Error ? convErr.message : String(convErr),
+          );
+          await prisma.contentAsset.update({
+            where: { id: assetId },
+            data: { tagStatus: AssetTagStatus.TAGGED, autoTags: {} },
+          });
+          return;
+        }
+      } else {
+        // Video / other non-image (vision can't read videos in v1).
+        await prisma.contentAsset.update({
+          where: { id: assetId },
+          data: { tagStatus: AssetTagStatus.TAGGED, autoTags: {} },
+        });
+        return;
+      }
     }
 
-    const tags = await tagAsset({ bytes, mime });
+    const tags = await tagAsset({
+      bytes,
+      mime: mime as 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp',
+    });
     await prisma.contentAsset.update({
       where: { id: assetId },
       data: { tagStatus: AssetTagStatus.TAGGED, autoTags: tags },

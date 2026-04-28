@@ -17,6 +17,7 @@ const nextConfig = {
       'google-auth-library',
       '@anthropic-ai/sdk',
       'node-cron',
+      'sharp',
     ],
     instrumentationHook: true,
   },
