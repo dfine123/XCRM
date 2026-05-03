@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { prisma } from '@xcrm/db';
-import { fetchFileBytes } from '@xcrm/drive-adapter';
+import { fetchFileBytes, fetchDriveThumbnail } from '@xcrm/drive-adapter';
 import {
   isBrowserRenderable,
   convertToBrowserJpeg,
@@ -83,6 +83,7 @@ export async function GET(
   let outBytes: Buffer = originalBytes;
   let outMime: string = originalMime;
   let converted = false;
+  let convertedVia: 'sharp' | 'drive-thumbnail' | null = null;
   if (
     originalMime.startsWith('image/') &&
     !isBrowserRenderable(originalMime)
@@ -92,23 +93,47 @@ export async function GET(
       outBytes = out.bytes;
       outMime = out.mime;
       converted = true;
+      convertedVia = 'sharp';
       console.log(
-        `[drive:file] assetId=${params.id} converted ${originalMime} → image/jpeg (${originalBytes.length} → ${outBytes.length} bytes)`,
+        `[drive:file] assetId=${params.id} sharp ${originalMime} → image/jpeg (${originalBytes.length} → ${outBytes.length} bytes)`,
       );
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      console.error(
-        `[drive:file] assetId=${params.id} mime=${originalMime} convert failed:`,
-        message,
+    } catch (sharpErr) {
+      // Sharp's bundled libheif covers HEVC-HEIC but not every HEIF
+      // compression variant (newer iPhones encode AV1-HEIF, etc.).
+      // Drive transcodes every uploaded image to a JPEG thumbnail
+      // server-side regardless of source codec — universal fallback.
+      const sharpMessage =
+        sharpErr instanceof Error ? sharpErr.message : String(sharpErr);
+      console.warn(
+        `[drive:file] assetId=${params.id} mime=${originalMime} sharp failed; falling back to Drive thumbnail. sharp said: ${sharpMessage}`,
       );
-      return NextResponse.json(
-        {
-          error: 'unsupported image format',
-          mime: originalMime,
-          detail: `${originalMime} couldn't be decoded. ${message}`,
-        },
-        { status: 415 },
-      );
+      try {
+        const thumb = await fetchDriveThumbnail(asset.driveFileId, {
+          sizePx: 1600,
+        });
+        outBytes = thumb.bytes;
+        outMime = thumb.mime;
+        converted = true;
+        convertedVia = 'drive-thumbnail';
+        console.log(
+          `[drive:file] assetId=${params.id} drive-thumbnail ${originalMime} → ${outMime} (${outBytes.length} bytes)`,
+        );
+      } catch (thumbErr) {
+        const thumbMessage =
+          thumbErr instanceof Error ? thumbErr.message : String(thumbErr);
+        console.error(
+          `[drive:file] assetId=${params.id} mime=${originalMime} drive-thumbnail also failed:`,
+          thumbMessage,
+        );
+        return NextResponse.json(
+          {
+            error: 'unsupported image format',
+            mime: originalMime,
+            detail: `Sharp couldn't decode it (${sharpMessage}); Drive thumbnail fallback also failed (${thumbMessage}).`,
+          },
+          { status: 415 },
+        );
+      }
     }
   } else {
     console.log(
@@ -125,6 +150,7 @@ export async function GET(
       mime: outMime,
       originalMime,
       converted,
+      convertedVia,
       size: outBytes.length,
       originalSize: originalBytes.length,
       browserRenderable: true,
@@ -132,9 +158,11 @@ export async function GET(
   }
 
   // ETag distinguishes converted output so a converted-then-re-fetched
-  // request gets the cached JPEG, not the raw HEIC bytes.
+  // request gets the cached JPEG, not the raw HEIC bytes. Suffix
+  // includes the conversion path so a sharp result can't pollute
+  // the cache for a thumbnail-fallback result and vice-versa.
   const etag = asset.driveChecksum
-    ? `"${asset.driveChecksum}${converted ? '-jpg' : ''}"`
+    ? `"${asset.driveChecksum}${converted ? `-${convertedVia ?? 'jpg'}` : ''}"`
     : null;
   const ifNoneMatch = req.headers.get('if-none-match');
   if (etag && ifNoneMatch && ifNoneMatch === etag) {
@@ -146,7 +174,12 @@ export async function GET(
     'Content-Length': String(outBytes.length),
     'Cache-Control': 'private, max-age=86400, must-revalidate',
     'X-Drive-Mime': originalMime,
-    ...(converted ? { 'X-Drive-Converted': '1' } : {}),
+    ...(converted
+      ? {
+          'X-Drive-Converted': '1',
+          'X-Drive-Converted-Via': convertedVia ?? 'unknown',
+        }
+      : {}),
   };
   if (etag) headers['ETag'] = etag;
 

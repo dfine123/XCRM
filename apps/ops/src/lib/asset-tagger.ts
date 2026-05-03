@@ -1,5 +1,9 @@
 import { prisma, AssetTagStatus } from '@xcrm/db';
-import { fetchFileBytes, isTaggableImageMime } from '@xcrm/drive-adapter';
+import {
+  fetchFileBytes,
+  fetchDriveThumbnail,
+  isTaggableImageMime,
+} from '@xcrm/drive-adapter';
 import { tagAsset } from '@xcrm/ai';
 import { convertToBrowserJpeg } from './image-convert';
 
@@ -30,19 +34,47 @@ export async function tagAssetInline(assetId: string): Promise<void> {
 
     if (!isTaggableImageMime(mime)) {
       if (mime.startsWith('image/')) {
-        // HEIC, HEIF, TIFF, etc. → re-encode to JPEG and try again.
+        // HEIC, HEIF, TIFF, etc. → try sharp first; if its bundled
+        // libheif can't decode (newer iPhone AV1-HEIF, etc.), fall
+        // back to Drive's pre-generated JPEG thumbnail.
+        let converted = false;
         try {
           const out = await convertToBrowserJpeg(bytes);
           bytes = out.bytes;
           mime = out.mime;
+          converted = true;
           console.log(
-            `[tag-asset] assetId=${assetId} converted source for tagging`,
+            `[tag-asset] assetId=${assetId} sharp-converted source for tagging`,
           );
-        } catch (convErr) {
+        } catch (sharpErr) {
           console.warn(
-            `[tag-asset] assetId=${assetId} couldn't convert ${mime}; skipping vision call.`,
-            convErr instanceof Error ? convErr.message : String(convErr),
+            `[tag-asset] assetId=${assetId} sharp couldn't decode ${mime}; trying Drive thumbnail fallback. sharp: ${sharpErr instanceof Error ? sharpErr.message : String(sharpErr)}`,
           );
+          try {
+            const thumb = await fetchDriveThumbnail(asset.driveFileId, {
+              sizePx: 1600,
+            });
+            bytes = thumb.bytes;
+            mime = thumb.mime;
+            converted = true;
+            console.log(
+              `[tag-asset] assetId=${assetId} drive-thumbnail fallback succeeded for tagging`,
+            );
+          } catch (thumbErr) {
+            console.warn(
+              `[tag-asset] assetId=${assetId} both sharp and Drive thumbnail failed; skipping vision call.`,
+              thumbErr instanceof Error ? thumbErr.message : String(thumbErr),
+            );
+            await prisma.contentAsset.update({
+              where: { id: assetId },
+              data: { tagStatus: AssetTagStatus.TAGGED, autoTags: {} },
+            });
+            return;
+          }
+        }
+        // After conversion the mime should be image/jpeg; if it
+        // somehow isn't taggable, bail safely.
+        if (!converted || !isTaggableImageMime(mime)) {
           await prisma.contentAsset.update({
             where: { id: assetId },
             data: { tagStatus: AssetTagStatus.TAGGED, autoTags: {} },
