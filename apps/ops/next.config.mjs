@@ -18,6 +18,7 @@ const nextConfig = {
       '@anthropic-ai/sdk',
       'node-cron',
       'sharp',
+      'heic-convert',
     ],
     instrumentationHook: true,
   },

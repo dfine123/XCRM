@@ -50,6 +50,9 @@ importers:
       bcryptjs:
         specifier: 2.4.3
         version: 2.4.3
+      heic-convert:
+        specifier: 2.1.0
+        version: 2.1.0
       next:
         specifier: ^14.2.35
         version: 14.2.35(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
@@ -75,6 +78,9 @@ importers:
       '@types/bcryptjs':
         specifier: 2.4.6
         version: 2.4.6
+      '@types/heic-convert':
+        specifier: 2.1.0
+        version: 2.1.0
       '@types/node':
         specifier: 20.19.0
         version: 20.19.0
@@ -1093,6 +1099,9 @@ packages:
   '@types/estree@1.0.8':
     resolution: {integrity: sha512-dWHzHa2WqEXI/O1E9OjrocMTKJl2mSrEolh1Iomrv6U+JuNwaHXsXx9bLu5gG7BUWFIN0skIQJQ/L1rIex4X6w==}
 
+  '@types/heic-convert@2.1.0':
+    resolution: {integrity: sha512-Cf5Sdc2Gm2pfZ0uN1zjj35wcf3mF1lJCMIzws5OdJynrdMJRTIRUGa5LegbVg0hatzOPkH2uAf2JRjPYgl9apg==}
+
   '@types/json5@0.0.29':
     resolution: {integrity: sha512-dRLjCWHYg4oaA77cxO64oO+7JwCwnIzkZPdrrC71jQmQtlhM556pwKo5bUzqvZndkVbeFLIIi+9TC40JNF5hNQ==}
 
@@ -2104,6 +2113,14 @@ packages:
     resolution: {integrity: sha512-ej4AhfhfL2Q2zpMmLo7U1Uv9+PyhIZpgQLGT1F9miIGmiCJIoCgSmczFdrc97mWT4kVY72KA+WnnhJ5pghSvSg==}
     engines: {node: '>= 0.4'}
 
+  heic-convert@2.1.0:
+    resolution: {integrity: sha512-1qDuRvEHifTVAj3pFIgkqGgJIr0M3X7cxEPjEp0oG4mo8GFjq99DpCo8Eg3kg17Cy0MTjxpFdoBHOatj7ZVKtg==}
+    engines: {node: '>=12.0.0'}
+
+  heic-decode@2.1.0:
+    resolution: {integrity: sha512-0fB3O3WMk38+PScbHLVp66jcNhsZ/ErtQ6u2lMYu/YxXgbBtl+oKOhGQHa4RpvE68k8IzbWkABzHnyAIjR758A==}
+    engines: {node: '>=8.0.0'}
+
   html-to-text@9.0.5:
     resolution: {integrity: sha512-qY60FjREgVZL03vJU6IfMV4GDjGBIoOyvuFdpBDIX9yTlDw0TjxVBQp+P8NvpdIXNJvfWBTNul7fsAQJq2FNpg==}
     engines: {node: '>=14'}
@@ -2309,6 +2326,9 @@ packages:
   jose@5.10.0:
     resolution: {integrity: sha512-s+3Al/p9g32Iq+oqXxkW//7jk2Vig6FF1CFqzVXoTUXt2qz89YWbL+OwS17NFYEvxC35n0FKeGO2LGYSxeM2Gg==}
 
+  jpeg-js@0.4.4:
+    resolution: {integrity: sha512-WZzeDOEtTOBK4Mdsar0IqEU5sMr3vSV2RqkAIzUEV2BHnUfKGyswWFPFwK5EeDo93K3FohSHbLAjj0s1Wzd+dg==}
+
   js-beautify@1.15.4:
     resolution: {integrity: sha512-9/KXeZUKKJwqCXUdBxFJ3vPh467OCckSBmYDwSK/EtV090K+iMJ7zx2S3HLVDIWFQdqMIsZWbnaGiba18aWhaA==}
     engines: {node: '>=14'}
@@ -2367,6 +2387,10 @@ packages:
   levn@0.4.1:
     resolution: {integrity: sha512-+bT2uH4E5LGE7h/n3evcS/sQlJXCpIp6ym8OWJ5eV6+67Dsql/LaaT7qJBAt2rzfoa/5QBGBhxDix1dMt2kQKQ==}
     engines: {node: '>= 0.8.0'}
+
+  libheif-js@1.19.8:
+    resolution: {integrity: sha512-vQJWusIxO7wavpON1dusciL8Go9jsIQ+EUrckauFYAiSTjcmLAsuJh3SszLpvkwPci3JcL41ek2n+LUZGFpPIQ==}
+    engines: {node: '>=8.0.0'}
 
   lilconfig@2.1.0:
     resolution: {integrity: sha512-utWOt/GHzuUxnLKxB6dk81RoOeoNeHgbrXiuGk4yyF5qlRz+iIVWu56E2fqGHFrXz0QNUhLB/8nKqvRH66JKGQ==}
@@ -2700,6 +2724,10 @@ packages:
   pirates@4.0.7:
     resolution: {integrity: sha512-TfySrs/5nm8fQJDcBDuUng3VOUKsd7S+zqvbOTiGXHfxX4wK31ard+hoNuvkicM/2YFzlpDgABOevKSsB4G/FA==}
     engines: {node: '>= 6'}
+
+  pngjs@6.0.0:
+    resolution: {integrity: sha512-TRzzuFRRmEoSW/p1KVAmiOgPco2Irlah+bGFCeNfJXxxYGwSw7YwAOAcd7X28K/m5bjBWKsC29KyoMfHbypayg==}
+    engines: {node: '>=12.13.0'}
 
   possible-typed-array-names@1.1.0:
     resolution: {integrity: sha512-/+5VFTchJDoVj3bhoqi6UeymcD00DAwb1nJwamzPvHEszJ4FpF6SNNbUbOS8yI56qHzdV8eK0qEfOSiodkTdxg==}
@@ -3966,6 +3994,8 @@ snapshots:
   '@types/cookie@0.6.0': {}
 
   '@types/estree@1.0.8': {}
+
+  '@types/heic-convert@2.1.0': {}
 
   '@types/json5@0.0.29': {}
 
@@ -5243,6 +5273,16 @@ snapshots:
     dependencies:
       function-bind: 1.1.2
 
+  heic-convert@2.1.0:
+    dependencies:
+      heic-decode: 2.1.0
+      jpeg-js: 0.4.4
+      pngjs: 6.0.0
+
+  heic-decode@2.1.0:
+    dependencies:
+      libheif-js: 1.19.8
+
   html-to-text@9.0.5:
     dependencies:
       '@selderee/plugin-htmlparser2': 0.11.0
@@ -5468,6 +5508,8 @@ snapshots:
 
   jose@5.10.0: {}
 
+  jpeg-js@0.4.4: {}
+
   js-beautify@1.15.4:
     dependencies:
       config-chain: 1.1.13
@@ -5532,6 +5574,8 @@ snapshots:
     dependencies:
       prelude-ls: 1.2.1
       type-check: 0.4.0
+
+  libheif-js@1.19.8: {}
 
   lilconfig@2.1.0: {}
 
@@ -5838,6 +5882,8 @@ snapshots:
       thread-stream: 3.1.0
 
   pirates@4.0.7: {}
+
+  pngjs@6.0.0: {}
 
   possible-typed-array-names@1.1.0: {}
 
